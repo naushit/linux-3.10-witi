@@ -55,7 +55,7 @@ static int mt76xx_codec_init(struct snd_soc_codec *codec);
 /****************************/
 /*GLOBAL VARIABLE DEFINITION*/
 /****************************/
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,20)
 extern struct snd_soc_dai_driver mt76xx_i2s_dai;
 extern struct snd_soc_platform_driver mt76xx_soc_platform;
 #else
@@ -301,7 +301,7 @@ static void __exit mt76xx_machine_exit(void)
 	printk("******* %s *******\n", __func__);
 
 	platform_device_unregister(mt76xx_audio_device);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,20)
 	/* Do nothing */
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
 	snd_soc_unregister_platform(&mt76xx_audio_device->dev);

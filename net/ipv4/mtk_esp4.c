@@ -196,10 +196,10 @@ EXPORT_SYMBOL(ipsec_espNextHeader_get);
 EXPORT_SYMBOL(ipsec_pktLength_get);
 EXPORT_SYMBOL(ipsec_eip93HashFinal_get);
 EXPORT_SYMBOL(ipsec_eip93UserId_get);
-#if !defined (CONFIG_HWCRYPTO_MEMPOOL)
+//#if !defined (CONFIG_HWCRYPTO_MEMPOOL)
 EXPORT_SYMBOL(ipsec_addrsDigestPreCompute_free);
 EXPORT_SYMBOL(ipsec_cmdHandler_free);
-#endif
+//#endif
 EXPORT_SYMBOL(ipsec_hashDigests_get);
 EXPORT_SYMBOL(ipsec_hashDigests_set);
 EXPORT_SYMBOL(ipsec_espSeqNum_get);

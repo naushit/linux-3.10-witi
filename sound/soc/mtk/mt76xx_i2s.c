@@ -58,7 +58,7 @@ static int mt76xx_i2s_rec_prepare(struct snd_pcm_substream *substream,struct snd
 static int mt76xx_i2s_hw_free(struct snd_pcm_substream *substream,struct snd_soc_dai *dai);
 static int mt76xx_i2s_prepare(struct snd_pcm_substream *substream, struct snd_soc_dai *dai);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,20)
 static int mt76xx_i2s_drv_probe(struct platform_device *pdev);
 static void mt76xx_i2s_drv_remove(struct platform_device *pdev);
 #endif
@@ -76,7 +76,7 @@ static struct snd_soc_dai_ops mt76xx_i2s_dai_ops = {
 	.set_fmt   = mt76xx_i2s_set_fmt,
 	//.set_sysclk = mt76xx_i2s_set_sysclk,
 };
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,20)
 const struct snd_soc_component_driver mt76xx_i2s_component = {
 	.name		= "mt76xx-i2s",
 };
@@ -266,7 +266,7 @@ static int mt76xx_i2s_prepare(struct snd_pcm_substream *substream,struct snd_soc
 	return 0;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,20)
 static int mt76xx_i2s_drv_probe(struct platform_device *pdev)
 {
 	//printk("****** %s ******\n", __func__);

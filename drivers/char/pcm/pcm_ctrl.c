@@ -20,7 +20,7 @@
 #if defined(CONFIG_ARM) || defined (CONFIG_ARM64)
 #include <linux/slab.h>
 #endif
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,20)
+#if LINUX_VERSION_CODE > KERNEL_VERSION(3,18,20)
 #include <asm-generic/pci-dma-compat.h>
 #endif
 #ifdef  CONFIG_DEVFS_FS

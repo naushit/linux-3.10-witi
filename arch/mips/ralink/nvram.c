@@ -14,7 +14,7 @@
 #include <linux/devfs_fs_kernel.h>
 static  devfs_handle_t devfs_handle;
 #endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,20)
 #include <linux/cdev.h>
 #include <linux/device.h>
 #endif
@@ -302,7 +302,7 @@ struct file_operations ralink_nvram_fops =
 	release:	ralink_nvram_release,
 };
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,20)
 static dev_t nvram_dev;
 static struct cdev nvram_cdev;
 static struct class *nvram_class = NULL;
@@ -313,7 +313,7 @@ int ra_nvram_init(void)
 	int r = 0;
 #endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,20)
 	dev_t dev = MKDEV(ralink_nvram_major, 0);
 	int alloc_ret = 0;
 	int cdev_err = 0;
@@ -485,7 +485,7 @@ static void ra_nvram_exit(void)
 		kfree(fb[index].env.data);
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,20)
 	nvram_dev = MKDEV(ralink_nvram_major, 0);
 	device_destroy(nvram_class, nvram_dev);
 	class_destroy(nvram_class);

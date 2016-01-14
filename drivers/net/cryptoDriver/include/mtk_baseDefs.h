@@ -18,6 +18,8 @@
 #define BASICDEFS_INLINE_V1
 #endif
 
+//Trey
+#define MODULE
 #ifdef linux
 #ifdef MODULE
 // kernel loadable module

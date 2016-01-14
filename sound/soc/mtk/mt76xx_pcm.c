@@ -66,7 +66,7 @@ static int mt76xx_pcm_hw_free(struct snd_pcm_substream *substream);
 static int mt76xx_pcm_free_dma_buffer(struct snd_pcm_substream *substream,int stream);
 static int mt76xx_pcm_allocate_dma_buffer(struct snd_pcm_substream *substream,int stream);
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,20)
+#if LINUX_VERSION_CODE > KERNEL_VERSION(3,18,20)
 static int mt76xx_platform_drv_probe(struct platform_device *pdev);
 static int mt76xx_platform_drv_remove(struct platform_device *pdev);
 #endif
@@ -106,7 +106,7 @@ static struct snd_pcm_ops mt76xx_pcm_ops = {
 #endif
 	.copy = mt76xx_pcm_copy,
 };
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,0)
+#if LINUX_VERSION_CODE > KERNEL_VERSION(3,18,0)
 struct snd_soc_platform_driver mt76xx_soc_platform = {
 	.ops		= &mt76xx_pcm_ops,
 	.pcm_new	= mt76xx_pcm_new,
@@ -442,7 +442,7 @@ static void mt76xx_pcm_free(struct snd_pcm *pcm)
 	return 0;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,20)
 static int mt76xx_platform_drv_probe(struct platform_device *pdev)
 {
 	//printk("******* %s *******\n", __func__);
