@@ -2657,9 +2657,6 @@ static const struct net_device_ops ei_netdev_ops = {
         .ndo_change_mtu         = ei_change_mtu,
         .ndo_do_ioctl           = ei_ioctl,
         .ndo_validate_addr      = eth_validate_addr,
-//#ifdef CONFIG_RAETH_HW_VLAN_RX
-//	.ndo_vlan_rx_register   = ei_vlan_rx_register,
-//#endif
 #ifdef CONFIG_NET_POLL_CONTROLLER
         .ndo_poll_controller    = raeth_clean,
 #endif
@@ -2760,6 +2757,8 @@ void trgmii_set_7621(void)
 
 void trgmii_set_7530(void)
 {
+	u32 regValue;
+
 // set MT7530 //
 #if 0 
 	

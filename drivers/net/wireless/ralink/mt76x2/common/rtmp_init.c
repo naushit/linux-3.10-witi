@@ -27,7 +27,7 @@
 */
 #include	"rt_config.h"
 
-#define READ_MAC_FROM_EEPROM y
+//#define READ_MAC_FROM_EEPROM y
 
 #ifdef OS_ABL_FUNC_SUPPORT
 /* Os utility link: printk, scanf */

@@ -4950,6 +4950,7 @@ static int __init xhci_hcd_init(void)
 #if defined (CONFIG_USB_MT7621_XHCI_PLATFORM)
 	retval = register_chrdev(XHCI_MTK_TEST_MAJOR, DEVICE_NAME, &xhci_mtk_test_fops);
 
+	reinitIP();
 	u3phy_init();
 	if (u3phy_ops->u2_slew_rate_calibration) {
 		u3phy_ops->u2_slew_rate_calibration(u3phy);
@@ -4959,8 +4960,6 @@ static int __init xhci_hcd_init(void)
 		printk(KERN_ERR "WARN: PHY doesn't implement u2 slew rate calibration function\n");
 	}
 	u3phy_ops->init(u3phy);
-	reinitIP();
-
 	pPlatformDev = &xhci_platform_dev;
 	memset(pPlatformDev, 0, sizeof(struct platform_device));
 	pPlatformDev->name = "xhci-hcd";
