@@ -109,6 +109,13 @@ config TIGON3
 	  To compile this driver as a module, choose M here: the module
 	  will be called tg3.  This is recommended.
 
+config TIGON3_V3133D
+	tristate "Broadcom Tigon3 support (New Version 3.133d)"
+	depends on PCI
+	select PHYLIB
+	select HWMON
+	select PTP_1588_CLOCK
+
 config BNX2X
 	tristate "Broadcom NetXtremeII 10Gb support"
 	depends on PCI

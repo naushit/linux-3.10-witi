@@ -8,17 +8,18 @@
 #define MOD_VERSION_HS_DMA 			"0.1"
 #define NUM_HSDMA_RX_DESC     256
 #define NUM_HSDMA_TX_DESC     256
-
+#define ADDRESS_VLAUE         16
 #define phys_to_bus(a) (a & 0x1FFFFFFF)
 
+#if defined (CONFIG_ARCH_MT7623)
+#include <mach/sync_write.h>
+#define sysRegRead(phys)            (*(volatile unsigned int *)((phys)))
+#define sysRegWrite(phys, val)      mt65xx_reg_sync_writel((val), (phys))
+#else
 #define PHYS_TO_K1(physaddr) KSEG1ADDR(physaddr)
-
-
-#define sysRegRead(phys)        \
-        (*(volatile unsigned int *)PHYS_TO_K1(phys))
-
-#define sysRegWrite(phys, val)  \
-        ((*(volatile unsigned int *)PHYS_TO_K1(phys)) = (val))
+#define sysRegRead(phys)        (*(volatile unsigned int *)PHYS_TO_K1(phys))
+#define sysRegWrite(phys, val)  ((*(volatile unsigned int *)PHYS_TO_K1(phys)) = (val))
+#endif
 
 
 
@@ -119,7 +120,7 @@ typedef struct _HSDMA_RXD_INFO1_  HSDMA_RXD_INFO1_T;
 
 struct _HSDMA_RXD_INFO1_
 {
-    unsigned int    PDP0;
+    volatile unsigned int    PDP0;
 };
 //-------------------------------------------------
 typedef struct _HSDMA_RXD_INFO2_    HSDMA_RXD_INFO2_T;
@@ -138,7 +139,7 @@ typedef struct _HSDMA_RXD_INFO3_  HSDMA_RXD_INFO3_T;
 
 struct _HSDMA_RXD_INFO3_
 {
-    unsigned int    PDP1;
+    volatile unsigned int    PDP1;
 };
 //-------------------------------------------------
 typedef struct _HSDMA_RXD_INFO4_    HSDMA_RXD_INFO4_T;
@@ -164,26 +165,28 @@ typedef struct _HSDMA_TXD_INFO1_  HSDMA_TXD_INFO1_T;
 
 struct _HSDMA_TXD_INFO1_
 {
-    unsigned int    SDP0;
+    volatile unsigned int    SDP0;
 };
 //-------------------------------------------------
 typedef struct _HSDMA_TXD_INFO2_    HSDMA_TXD_INFO2_T;
 
 struct _HSDMA_TXD_INFO2_
 {
+	
     volatile unsigned int    SDL1                  : 14;
     volatile unsigned int    LS1_bit               : 1;
     volatile unsigned int    BURST_bit             : 1;
     volatile unsigned int    SDL0                  : 14;
     volatile unsigned int    LS0_bit               : 1;
     volatile unsigned int    DDONE_bit             : 1;
+    //volatile unsigned int    All                   : 32;
 };
 //-------------------------------------------------
 typedef struct _HSDMA_TXD_INFO3_  HSDMA_TXD_INFO3_T;
 
 struct _HSDMA_TXD_INFO3_
 {
-    unsigned int    SDP1;
+    volatile unsigned int    SDP1;
 };
 //-------------------------------------------------
 typedef struct _HSDMA_TXD_INFO4_    HSDMA_TXD_INFO4_T;
@@ -207,7 +210,8 @@ struct HSdmaReqEntry {
     unsigned int  hsdma_tx_full;
     unsigned int	phy_hsdma_tx_ring0;
     unsigned int	phy_hsdma_rx_ring0;
-    spinlock_t          page_lock;              /* Page register locks */
+    spinlock_t          page_lock;
+    spinlock_t          page_lock_mem;               /* Page register locks */
     struct HSDMA_txdesc *HSDMA_tx_ring0;
 
     struct HSDMA_rxdesc *HSDMA_rx_ring0;

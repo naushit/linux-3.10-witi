@@ -26,8 +26,12 @@ static int register_control = RDM_WIRELESS_ADDR;
 #ifdef  CONFIG_DEVFS_FS
 static devfs_handle_t devfs_handle;
 #endif
+#if defined(CONFIG_ARCH_MT7623) 
+/*Kurtis temp change to avoid collison*/
+int rdm_major =  263;
+#else
 int rdm_major =  253;
-
+#endif
 
 /*kurtis test*/
 unsigned int QueueLog[1024][16];

@@ -1,4 +1,3 @@
-#include <linux/config.h>
 #include <linux/version.h>
 #include <linux/module.h>
 #include <linux/skbuff.h>
@@ -10,20 +9,22 @@
 #include "frame_engine.h"
 #include "mcast_tbl.h"
 
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,0)
-DEFINE_MUTEX(mtbl_lock);
+#if LINUX_VERSION_CODE > KERNEL_VERSION(3,4,0)
+spinlock_t mtbl_lock;
 #else
 DECLARE_MUTEX(mtbl_lock);
 #endif
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3,10,0)
-#define UP(x)	 mutex_lock(&x)
-#define DOWN(x)  mutex_unlock(&x)
+#if LINUX_VERSION_CODE > KERNEL_VERSION(3,4,0)
+#define UP(x) spin_unlock(&x)
+#define DOWN(x) spin_lock(&x)
 #else
-#define UP(x)	 up(&x)
-#define DOWN(x)  down(&x)
+#define UP(x) up(&x)
+#define DOWN(x) down(&x)
 #endif
+
+
+
 
 int32_t mcast_entry_get(uint16_t vlan_id, uint8_t *dst_mac) 
 {
@@ -35,8 +36,16 @@ int32_t mcast_entry_get(uint16_t vlan_id, uint8_t *dst_mac)
 		GET_PPE_MCAST_L(i)->mc_mac_addr[2] == dst_mac[3] &&
 		GET_PPE_MCAST_L(i)->mc_mac_addr[1] == dst_mac[4] &&
 		GET_PPE_MCAST_L(i)->mc_mac_addr[0] == dst_mac[5]) {
-	    UP(mtbl_lock);
-	    return i;
+		if(GET_PPE_MCAST_H(i)->mc_mpre_sel==0) {
+			if(dst_mac[0]==0x1 && dst_mac[1]==0x00) {
+				return i;
+			}
+		}else if(GET_PPE_MCAST_H(i)->mc_mpre_sel==1) {
+			if(dst_mac[0]==0x33 && dst_mac[1]==0x33) {
+				return i;
+			}
+		}else 
+			continue;
 	}
     }
     return -1;
@@ -66,6 +75,15 @@ int foe_mcast_entry_ins(uint16_t vlan_id, uint8_t *dst_mac, uint8_t mc_px_en, ui
 	mcast_h = GET_PPE_MCAST_H(entry_num);
 	mcast_l = GET_PPE_MCAST_L(entry_num);
 
+	if(dst_mac[0]==0x1 && dst_mac[1]==0x00)
+		mcast_h->mc_mpre_sel = 0;
+	else if(dst_mac[0]==0x33 && dst_mac[1]==0x33)
+		mcast_h->mc_mpre_sel = 1;
+	else  {
+	    UP(mtbl_lock);
+	    return 0;
+	}
+
 	mcast_h->mc_px_en |= mc_px_en;
 	mcast_h->mc_px_qos_en |= mc_px_qos_en;
 	UP(mtbl_lock);
@@ -78,6 +96,15 @@ int foe_mcast_entry_ins(uint16_t vlan_id, uint8_t *dst_mac, uint8_t mc_px_en, ui
 
 		    if(mcast_h->valid == 0) {
 	    
+			    if(dst_mac[0]==0x1 && dst_mac[1]==0x00)
+				    mcast_h->mc_mpre_sel = 0;
+			    else if(dst_mac[0]==0x33 && dst_mac[1]==0x33)
+				    mcast_h->mc_mpre_sel = 1;
+			    else {
+				UP(mtbl_lock);
+				return 0;
+			    }
+
 			    mcast_h->mc_vid = vlan_id;
 			    mcast_h->mc_px_en = mc_px_en;
 			    mcast_h->mc_px_qos_en = mc_px_qos_en;
@@ -162,7 +189,7 @@ void foe_mcast_entry_dump(void)
 	    mcast_h = GET_PPE_MCAST_H(i);
 	    mcast_l = GET_PPE_MCAST_L(i);
 
-	    printk("%x:%x:%x:%x  %d  %c%c%c%c %c%c%c%c (QID=%d)\n", 
+	    printk("%x:%x:%x:%x  %d  %c%c%c%c %c%c%c%c (QID=%d, mc_mpre_sel=%d)\n", 
 			    mcast_l->mc_mac_addr[3], 
 			    mcast_l->mc_mac_addr[2], 
 			    mcast_l->mc_mac_addr[1], 
@@ -176,7 +203,8 @@ void foe_mcast_entry_dump(void)
 			    (mcast_h->mc_px_qos_en & 0x04)?'1':'-',
 			    (mcast_h->mc_px_qos_en & 0x02)?'1':'-',
 			    (mcast_h->mc_px_qos_en & 0x01)?'1':'-',
-			     mcast_h->mc_qos_qid);
+			     mcast_h->mc_qos_qid,
+			     mcast_h->mc_mpre_sel);
     }
     UP(mtbl_lock);
 }	
@@ -196,6 +224,7 @@ void foe_mcast_entry_del_all(void)
 		mcast_h->valid = 0;
 		mcast_h->mc_vid = 0;
 		mcast_h->mc_qos_qid = 0;
+		mcast_h->mc_mpre_sel = 0;
 		memset(&mcast_l->mc_mac_addr, 0, 4);
     }
     UP(mtbl_lock);

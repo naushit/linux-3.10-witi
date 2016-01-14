@@ -336,12 +336,6 @@ int fe_tx_desc_init(struct net_device *dev, unsigned int ring_no, unsigned int q
 
 int  pkt_classifier(struct sk_buff *skb,int gmac_no, int *ring_no, int *queue_no, int *port_no)
 {
-#if defined(CONFIG_RALINK_RT2880)
-    /* RT2880 -- Assume using 1 Ring (Ring0), Queue 0, and Port 0 */
-    *port_no 	= 0;
-    *ring_no 	= 0;
-    *queue_no 	= 0;
-#else
     unsigned int ac=0;
     unsigned int bridge_traffic=0, lan_traffic=0;
     struct iphdr *iph=NULL;
@@ -355,31 +349,8 @@ int  pkt_classifier(struct sk_buff *skb,int gmac_no, int *ring_no, int *queue_no
 
     /* Bridge:: {BG,BE,VI,VO} */
     /* GateWay:: WAN: {BG,BE,VI,VO}, LAN: {BG,BE,VI,VO} */
-#if defined (CONFIG_RALINK_RT3883) && defined (CONFIG_RAETH_GMAC2)
-    /* 
-     * 1) Bridge: 
-     *    1.1) GMAC1 ONLY:
-     *                 VO/VI->Ring3, BG/BE->Ring2 
-     *    1.2) GMAC1+GMAC2: 
-     *                 GMAC1:: VO/VI->Ring3, BG/BE->Ring2 
-     *                 GMAC2:: VO/VI->Ring1, BG/BE->Ring0 
-     * 2) GateWay:
-     *    2.1) GMAC1 ONLY:
-     *	       GMAC1:: LAN:VI/VO->Ring2, BE/BK->Ring2
-     *	               WAN:VI/VO->Ring3, BE/BK->Ring3
-     *    2.2)GMAC1+GMAC2: 
-     *	       GMAC1:: LAN:VI/VO/BE/BK->Ring2, WAN:VI/VO/BE/BK->Ring3
-     *	       GMAC2:: VI/VO->Ring1, BE/BK->Ring0
-     */
-    static unsigned char AcToRing_BridgeMap[4] = {2, 2, 3, 3}; 
-    static unsigned char AcToRing_GE1Map[2][4] = {{3, 3, 3, 3},{2, 2, 2, 2}}; 
-    static unsigned char AcToRing_GE2Map[4] = {0, 0, 1, 1};
-#elif defined (CONFIG_RALINK_RT3052) || defined (CONFIG_RALINK_RT2883) || \
-      defined (CONFIG_RALINK_RT3352) || defined (CONFIG_RALINK_RT5350) || \
-      defined (CONFIG_RALINK_RT6855) || defined(CONFIG_RALINK_RT6855A) || \
-      defined (CONFIG_RALINK_MT7620) || defined(CONFIG_RALINK_MT7621) || \
-      defined (CONFIG_RALINK_MT7628) || \
-     (defined (CONFIG_RALINK_RT3883) && !defined(CONFIG_RAETH_GMAC2))
+#if   defined (CONFIG_RALINK_MT7620) || defined(CONFIG_RALINK_MT7621) || \
+      defined (CONFIG_RALINK_MT7628) || defined(CONFIG_RALINK_MT7623)
     /* 
      * 1) Bridge: VO->Ring3, VI->Ring2, BG->Ring1, BE->Ring0 
      * 2) GateWay:
@@ -441,9 +412,6 @@ int  pkt_classifier(struct sk_buff *skb,int gmac_no, int *ring_no, int *queue_no
 	    *ring_no = AcToRing_GE1Map[lan_traffic][ac];
 	}
     }else { //GMAC2
-#if defined (CONFIG_RALINK_RT3883) && defined (CONFIG_RAETH_GMAC2)
-	*ring_no = AcToRing_GE2Map[ac];
-#endif
     }
 
 
@@ -461,8 +429,6 @@ int  pkt_classifier(struct sk_buff *skb,int gmac_no, int *ring_no, int *queue_no
 	}
     }
 #endif // CONFIG_RAETH_GMAC2 //
-
-#endif
 
     return 1;
 
@@ -550,8 +516,7 @@ void set_scheduler_weight(void)
     /* 
      * STEP2: Ring scheduling configuration 
      */
-#if defined (CONFIG_RALINK_RT6855) || defined(CONFIG_RALINK_RT6855A) || \
-    defined (CONFIG_RALINK_MT7620) || defined(CONFIG_RALINK_MT7621)
+#if defined (CONFIG_RALINK_MT7620) || defined(CONFIG_RALINK_MT7621)
     /* MIN_RATE_RATIO0=0, MAX_RATE_ULMT0=1, Weight0=1 */
     *(unsigned long *)SCH_Q01_CFG =  (0 << 10) | (1<<14) | (0 << 12);
     /* MIN_RATE_RATIO1=0, MAX_RATE_ULMT1=1, Weight1=4 */
@@ -600,7 +565,7 @@ void set_schedule_pause_condition(void)
 {
 #if defined (CONFIG_RALINK_MT7620)
     
-#elif defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#elif defined (CONFIG_RALINK_MT7628)
     *(unsigned long *)SDM_TRING = (0xC << 28) | (0x3 << 24) | (0xC << 4) | 0x3;
 #else
     /* 

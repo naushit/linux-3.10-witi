@@ -38,6 +38,11 @@ extern u32 get_surfboard_sysclk(void) ;
 #include <linux/spi/flash.h>
 #endif
 
+//#define TWO_SPI_FLASH
+#ifdef TWO_SPI_FLASH
+#include <linux/mtd/concat.h>
+#endif
+
 #if defined (CONFIG_SUPPORT_OPENWRT)
 
 static struct mtd_partition rt2880_partitions[] = {
@@ -66,7 +71,6 @@ static struct mtd_partition rt2880_partitions[] = {
 };
 
 #else /* CONFIG_SUPPORT_OPENWRT */
-
 static struct mtd_partition rt2880_partitions[] = {
 	{
                 name:           "ALL",
@@ -119,10 +123,34 @@ static struct mtd_partition rt2880_partitions[] = {
                 offset:         MTD_ROOTFS2_PART_OFFSET,
 #endif
 #endif
+#ifdef CONFIG_EXTEND_NVRAM
+        }, {
+                name:           "Config2",
+                size:           MTD_CONFIG_PART_SIZE,
+                offset:         MTD_CONFIG2_PART_OFFSET,
+#endif
         }
 };
 
 #endif /* CONFIG_SUPPORT_OPENWRT */
+
+#ifdef TWO_SPI_FLASH
+static struct mtd_partition rt2880_partitions_2[] = {
+	{
+		name:           "second_all",
+                size:           MTDPART_SIZ_FULL,
+		offset:         0x0,  // the first SPI flash's size
+	}, {
+		name:           "second_1",
+		size:           0x50000,  // the second SPI flash's size
+		offset:         0x0,  // the first SPI flash's size
+	}, {
+		name:           "second_2",
+		size:           0x700000,  // the partition of second SPI flash
+                offset:         MTDPART_OFS_APPEND,
+	}
+};
+#endif
 
 /******************************************************************************
  * SPI FLASH elementray definition and function
@@ -404,44 +432,45 @@ struct chip_info {
 
 static struct chip_info chips_data [] = {
 	/* REVISIT: fill in JEDEC ids, for parts that have them */
-	{ "AT25DF321",		0x1f, 0x47000000, 64 * 1024, 64,  0 },
-	{ "AT26DF161",		0x1f, 0x46000000, 64 * 1024, 32,  0 },
-	{ "FL016AIF",		0x01, 0x02140000, 64 * 1024, 32,  0 },
-	{ "FL064AIF",		0x01, 0x02160000, 64 * 1024, 128, 0 },
-	{ "MX25L1605D",		0xc2, 0x2015c220, 64 * 1024, 32,  0 },
-	{ "MX25L3205D",		0xc2, 0x2016c220, 64 * 1024, 64,  0 },
-	{ "MX25L6405D",		0xc2, 0x2017c220, 64 * 1024, 128, 0 },
-	{ "MX25L12805D",	0xc2, 0x2018c220, 64 * 1024, 256, 0 },
-	{ "MX25L25635E",	0xc2, 0x2019c220, 64 * 1024, 512, 1 },
-	{ "S25FL256S",		0x01, 0x02194D01, 64 * 1024, 512, 1 },
-	{ "S25FL128P",		0x01, 0x20180301, 64 * 1024, 256, 0 },
-	{ "S25FL129P",		0x01, 0x20184D01, 64 * 1024, 256, 0 },
+	{ "AT25DF321",          0x1f, 0x47000000, 64 * 1024, 64,  0 },
+	{ "AT26DF161",          0x1f, 0x46000000, 64 * 1024, 32,  0 },
+	{ "FL016AIF",           0x01, 0x02140000, 64 * 1024, 32,  0 },
+	{ "FL064AIF",           0x01, 0x02160000, 64 * 1024, 128, 0 },
+	{ "MX25L1605D",         0xc2, 0x2015c220, 64 * 1024, 32,  0 },//MX25L1606E
+	{ "MX25L3205D",         0xc2, 0x2016c220, 64 * 1024, 64,  0 },//MX25L3233F
+	{ "MX25L6405D",         0xc2, 0x2017c220, 64 * 1024, 128, 0 },//MX25L6433F
+	{ "MX25L12805D",        0xc2, 0x2018c220, 64 * 1024, 256, 0 },//MX25L12835F
+	{ "MX25L25635E",        0xc2, 0x2019c220, 64 * 1024, 512, 1 },//MX25L25635F
+	{ "MX25L51245G",        0xc2, 0x201ac220, 64 * 1024, 1024, 1 },
+	{ "S25FL256S",          0x01, 0x02194D01, 64 * 1024, 512, 1 },
+	{ "S25FL128P",          0x01, 0x20180301, 64 * 1024, 256, 0 },
+	{ "S25FL129P",          0x01, 0x20184D01, 64 * 1024, 256, 0 },
 	{ "S25FL164K",          0x01, 0x40170140, 64 * 1024, 128, 0 },
-	{ "S25FL132K",          0x01, 0x40160140, 64 * 1024, 64, 0 },
-	{ "S25FL032P",		0x01, 0x02154D00, 64 * 1024, 64,  0 },
-	{ "S25FL064P",		0x01, 0x02164D00, 64 * 1024, 128, 0 },
+	{ "S25FL132K",          0x01, 0x40160140, 64 * 1024, 64,  0 },
+	{ "S25FL032P",          0x01, 0x02154D00, 64 * 1024, 64,  0 },
+	{ "S25FL064P",          0x01, 0x02164D00, 64 * 1024, 128, 0 },
 	{ "S25FL116K",          0x01, 0x40150140, 64 * 1024, 32,  0 },
 	{ "F25L64QA",           0x8c, 0x41170000, 64 * 1024, 128, 0 }, //ESMT
 	{ "F25L32QA",           0x8c, 0x41168c41, 64 * 1024, 64,  0 }, //ESMT
-	{ "EN25F16",		0x1c, 0x31151c31, 64 * 1024, 32,  0 },
-	{ "EN25Q32B",		0x1c, 0x30161c30, 64 * 1024, 64,  0 },
+	{ "EN25F16",            0x1c, 0x31151c31, 64 * 1024, 32,  0 },
+	{ "EN25Q32B",           0x1c, 0x30161c30, 64 * 1024, 64,  0 },
 	{ "EN25F32",            0x1c, 0x31161c31, 64 * 1024, 64,  0 },
-	{ "EN25Q32B",		0x1c, 0x30161c30, 64 * 1024, 64,  0 },
-	{ "EN25F64",		0x1c, 0x20171c20, 64 * 1024, 128, 0 },	// EN25P64
+	{ "EN25F64",            0x1c, 0x20171c20, 64 * 1024, 128, 0 },  // EN25P64
 	{ "EN25Q64",            0x1c, 0x30171c30, 64 * 1024, 128, 0 },
-	{ "W25Q32BV",		0xef, 0x40160000, 64 * 1024, 64,  0 },
-	{ "W25X32VS",           0xef, 0x30160000, 64 * 1024, 64,  0 },       
-	{ "W25Q64BV",           0xef, 0x40170000, 64 * 1024, 128, 0 }, //S25FL064K
-	{ "W25Q128BV",          0xef, 0x40180000, 64 * 1024, 256, 0 },
-	{ "W25Q256FV",		0xef, 0x40190000, 64 * 1024, 512, 1 },
-	{ "N25Q032A13ESE40F",   0x20, 0xba161000, 64 * 1024, 64,  0 },       
+	{ "W25Q32BV",           0xef, 0x40160000, 64 * 1024, 64,  0 },//W25Q32FV
+	{ "W25X32VS",           0xef, 0x30160000, 64 * 1024, 64,  0 },
+	{ "W25Q64BV",           0xef, 0x40170000, 64 * 1024, 128, 0 }, //S25FL064K //W25Q64FV
+	{ "W25Q128BV",          0xef, 0x40180000, 64 * 1024, 256, 0 },//W25Q128FV
+	{ "W25Q256FV",          0xef, 0x40190000, 64 * 1024, 512, 1 },
+	{ "N25Q032A13ESE40F",   0x20, 0xba161000, 64 * 1024, 64,  0 },
 	{ "N25Q064A13ESE40F",   0x20, 0xba171000, 64 * 1024, 128, 0 },
 	{ "N25Q128A13ESE40F",   0x20, 0xba181000, 64 * 1024, 256, 0 },
-	{ "N25Q256A",       0x20, 0xba191000, 64 * 1024, 512, 1 },
-    { "MT25QL512AB",    0x20, 0xba201044, 64 * 1024, 1024, 1 },    
+	{ "N25Q256A",       	0x20, 0xba191000, 64 * 1024, 512, 1 },
+	{ "MT25QL512AB",    	0x20, 0xba201044, 64 * 1024, 1024, 1 },
 	{ "GD25Q32B",           0xC8, 0x40160000, 64 * 1024, 64,  0 },
-	{ "GD25Q64B",           0xC8, 0x40170000, 64 * 1024, 128,  0 },
-	{ "GD25Q128C",          0xC8, 0x40180000, 64 * 1024, 256,  0 },
+	{ "GD25Q64B",           0xC8, 0x40170000, 64 * 1024, 128, 0 },
+	{ "GD25Q128C",          0xC8, 0x40180000, 64 * 1024, 256, 0 },
+
 
 };
 
@@ -450,10 +479,18 @@ struct flash_info {
 	struct semaphore	lock;
 	struct mtd_info		mtd;
 	struct chip_info	*chip;
+#ifdef TWO_SPI_FLASH
+	struct chip_info        *chips[2];
+	struct mtd_info         mtd2;
+#endif
 	u8			command[5];
 };
 
-struct flash_info *flash;
+#ifdef TWO_SPI_FLASH
+struct mtd_info *merged_mtd;
+static struct mtd_info *ralink_mtd[2];
+#endif
+struct flash_info *flash = NULL;
 
 /****************************************************************************/
 
@@ -719,6 +756,31 @@ static int raspi_clear_sr()
 	return 0;
 }
 
+/*
+ * Set write enable latch with Write Enable command.
+ * Returns negative if error occurred.
+ */
+static inline int raspi_write_enable(void)
+{
+	u8 code = OPCODE_WREN;
+
+#ifdef COMMAND_MODE
+	raspi_cmd(code, 0, 0, 0, 0, 0, 0);
+#else
+	return spic_write(&code, 1, NULL, 0);
+#endif
+}
+
+static inline int raspi_write_disable(void)
+{
+	u8 code = OPCODE_WRDI;
+
+#ifdef COMMAND_MODE
+	raspi_cmd(code, 0, 0, 0, 0, 0, 0);
+#else
+	return spic_write(&code, 1, NULL, 0);
+#endif
+}
 
 static int raspi_4byte_mode(int enable)
 {
@@ -800,31 +862,6 @@ static int raspi_4byte_mode(int enable)
 
 
 
-/*
- * Set write enable latch with Write Enable command.
- * Returns negative if error occurred.
- */
-static inline int raspi_write_enable(void)
-{
-	u8 code = OPCODE_WREN;
-
-#ifdef COMMAND_MODE
-	raspi_cmd(code, 0, 0, 0, 0, 0, 0);
-#else
-	return spic_write(&code, 1, NULL, 0);
-#endif
-}
-
-static inline int raspi_write_disable(void)
-{
-	u8 code = OPCODE_WRDI;
-
-#ifdef COMMAND_MODE
-	raspi_cmd(code, 0, 0, 0, 0, 0, 0);
-#else
-	return spic_write(&code, 1, NULL, 0);
-#endif
-}
 
 /*
  * Set all sectors (global) unprotected if they are protected.
@@ -1041,11 +1078,23 @@ static int ramtd_erase(struct mtd_info *mtd, struct erase_info *instr)
 	len = instr->len;
 
   	down(&flash->lock);
+#ifdef TWO_SPI_FLASH
+	if (mtd == ralink_mtd[1])
+	{		 
+		ra_or(RT2880_SPI_ARB_REG, (1 << 16));
+	}
+#endif
 
 	/* now erase those sectors */
 	while (len > 0) {
 		if (raspi_erase_sector(addr)) {
 			instr->state = MTD_ERASE_FAILED;
+#ifdef TWO_SPI_FLASH
+		if (mtd == ralink_mtd[1])
+		{		 
+			ra_and(RT2880_SPI_ARB_REG, ~(1 << 16));
+		}
+#endif
 			up(&flash->lock);
 			return -EIO;
 		}
@@ -1054,6 +1103,12 @@ static int ramtd_erase(struct mtd_info *mtd, struct erase_info *instr)
 		len -= mtd->erasesize;
 	}
 
+#ifdef TWO_SPI_FLASH
+	if (mtd == ralink_mtd[1])
+	{		 
+		ra_and(RT2880_SPI_ARB_REG, ~(1 << 16));
+	}
+#endif
   	up(&flash->lock);
 
 	instr->state = MTD_ERASE_DONE;
@@ -1091,6 +1146,13 @@ static int ramtd_read(struct mtd_info *mtd, loff_t from, size_t len,
 		up(&flash->lock);
 		return -EIO;
 	}
+
+#ifdef TWO_SPI_FLASH
+	if (mtd == ralink_mtd[1])
+	{		 
+		ra_or(RT2880_SPI_ARB_REG, (1 << 16));
+	}
+#endif
 
 	/* NOTE: OPCODE_FAST_READ (if available) is faster... */
 
@@ -1199,6 +1261,12 @@ static int ramtd_read(struct mtd_info *mtd, loff_t from, size_t len,
 
 #endif /* READ_BY_PAGE */
 #endif // COMMAND_MODE
+#ifdef TWO_SPI_FLASH
+	if (mtd == ralink_mtd[1])
+	{		 
+		ra_and(RT2880_SPI_ARB_REG, ~(1 << 16));
+	}
+#endif
   	up(&flash->lock);
 
 	if (retlen) 
@@ -1268,6 +1336,13 @@ static int ramtd_write(struct mtd_info *mtd, loff_t to, size_t len,
 		up(&flash->lock);
 		return -1;
 	}
+
+#ifdef TWO_SPI_FLASH
+	if (mtd == ralink_mtd[1])
+	{		 
+		ra_or(RT2880_SPI_ARB_REG, (1 << 16));
+	}
+#endif
 
 	raspi_write_enable();
 
@@ -1351,6 +1426,12 @@ static int ramtd_write(struct mtd_info *mtd, loff_t to, size_t len,
 				*retlen += retval;
 				
 			if (retval < page_size) {
+#ifdef TWO_SPI_FLASH
+			if (mtd == ralink_mtd[1])
+			{		 
+				ra_and(RT2880_SPI_ARB_REG, ~(1 << 16));
+			}
+#endif
 				up(&flash->lock);
 				printk("%s: retval:%x return:%x page_size:%x \n", 
 				       __func__, retval, retval, page_size);
@@ -1372,12 +1453,54 @@ static int ramtd_write(struct mtd_info *mtd, loff_t to, size_t len,
 	}
 
 	raspi_write_disable();
+#ifdef TWO_SPI_FLASH
+	if (mtd == ralink_mtd[1])
+	{		 
+		ra_and(RT2880_SPI_ARB_REG, (~1 << 16));
+	}
+#endif
 
 	up(&flash->lock);
 
 	return 0;
 }
 
+#ifdef TWO_SPI_FLASH
+static int ramtd_erase_2(struct mtd_info *mtd, struct erase_info *instr)
+{
+	int ret;
+	ra_or(RT2880_SPI_ARB_REG, (1 << 16));
+	flash->chip = flash->chips[1];
+	ret = ramtd_erase(mtd, instr);
+	flash->chip = flash->chips[0];
+	ra_and(RT2880_SPI_ARB_REG, ~(1 << 16));
+	return ret;
+}
+
+static int ramtd_read_2(struct mtd_info *mtd, loff_t from, size_t len,
+	size_t *retlen, u_char *buf)
+{
+	int ret;
+	ra_or(RT2880_SPI_ARB_REG, (1 << 16));
+	flash->chip = flash->chips[1];
+	ret = ramtd_read(mtd, from, len, retlen, buf);
+	flash->chip = flash->chips[0];
+	ra_and(RT2880_SPI_ARB_REG, ~(1 << 16));
+	return ret;
+}
+
+static int ramtd_write_2(struct mtd_info *mtd, loff_t to, size_t len,
+	size_t *retlen, const u_char *buf)
+{
+	int ret;
+	ra_or(RT2880_SPI_ARB_REG, (1 << 16));
+	flash->chip = flash->chips[1];
+	ret = ramtd_write(mtd, to, len, retlen, buf);
+	flash->chip = flash->chips[0];
+	ra_and(RT2880_SPI_ARB_REG, ~(1 << 16));
+	return ret;
+}
+#endif
 
 /****************************************************************************/
 
@@ -1517,12 +1640,73 @@ static struct mtd_info *raspi_probe(struct map_info *map)
 	}
 #endif
 
+#ifdef TWO_SPI_FLASH
+	flash->chips[0] = chip;
+
+	ra_and(RALINK_SYSCTL_BASE + 0x60, ~(1 << 12));
+	ra_or(RT2880_SPI_ARB_REG, (1 << 16));
+	chip = chip_prob();
+	flash->chips[1] = chip;
+	ra_and(RT2880_SPI_ARB_REG, ~(1 << 16));
+	flash->mtd2.name = "raspi2";
+
+	flash->mtd2.type = MTD_NORFLASH;
+	flash->mtd2.writesize = 1;
+	flash->mtd2.flags = MTD_CAP_NORFLASH;
+	flash->mtd2.size = chip->sector_size * chip->n_sectors;
+	flash->mtd2.erasesize = chip->sector_size;
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,36)
+	flash->mtd2._erase = ramtd_erase_2;
+	flash->mtd2._read = ramtd_read_2;
+	flash->mtd2._write = ramtd_write_2;
+	flash->mtd2._lock = ramtd_lock;
+	flash->mtd2._unlock = ramtd_unlock;
+	sema_init(&flash->lock,1);
+#else
+	flash->mtd2.erase = ramtd_erase_2;
+	flash->mtd2.read = ramtd_read_2;
+	flash->mtd2.write = ramtd_write_2;
+	flash->mtd2.lock = ramtd_lock;
+	flash->mtd2.unlock = ramtd_unlock;
+	init_MUTEX(&flash->lock);
+#endif
+
+	printk("%s(%02x %04x) (%d Kbytes)\n", 
+	       chip->name, chip->id, chip->jedec_id, flash->mtd2.size / 1024);
+
+	printk("mtd .name = %s, .size = 0x%.8x (%uM) "
+			".erasesize = 0x%.8x (%uK) .numeraseregions = %d\n",
+		flash->mtd2.name,
+		flash->mtd2.size, flash->mtd2.size / (1024*1024),
+		flash->mtd2.erasesize, flash->mtd2.erasesize / 1024,
+		flash->mtd2.numeraseregions);
+
+	if (flash->mtd2.numeraseregions)
+		for (i = 0; i < flash->mtd2.numeraseregions; i++)
+			printk("mtd.eraseregions[%d] = { .offset = 0x%.8x, "
+				".erasesize = 0x%.8x (%uK), "
+				".numblocks = %d }\n",
+				i, flash->mtd2.eraseregions[i].offset,
+				flash->mtd2.eraseregions[i].erasesize,
+				flash->mtd2.eraseregions[i].erasesize / 1024,
+				flash->mtd2.eraseregions[i].numblocks);
+
+	ralink_mtd[0] = &flash->mtd;
+	ralink_mtd[1] = &flash->mtd2;
+	merged_mtd = mtd_concat_create(ralink_mtd, 2, "Ralink Merged Flash");
+	add_mtd_partitions(&flash->mtd, rt2880_partitions, ARRAY_SIZE(rt2880_partitions));
+	add_mtd_partitions(&flash->mtd2, rt2880_partitions_2, ARRAY_SIZE(rt2880_partitions_2));
+	return merged_mtd;
+
+#else
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,22)
 	return add_mtd_partitions(&flash->mtd, rt2880_partitions, ARRAY_SIZE(rt2880_partitions));
 #else
 	add_mtd_partitions(&flash->mtd, rt2880_partitions, ARRAY_SIZE(rt2880_partitions));
 	return &flash->mtd;
+#endif
+
 #endif
 }
 

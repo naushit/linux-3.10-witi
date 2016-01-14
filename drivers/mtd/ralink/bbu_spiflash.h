@@ -51,6 +51,53 @@
 #define STM_STATUS_SRWD		0x80	/* Status Register Write Disable */
 
 #define STM_STATUS_QE		0x02	/* Quad Enable */
+#define RT2880_REG(x)		(*((volatile u32 *)(x)))
+
+#if !defined (SPI_DEBUG)
+
+#define ra_inl(addr)  (*(volatile unsigned int *)(addr))
+#define ra_outl(addr, value)  (*(volatile unsigned int *)(addr) = (value))
+#define ra_dbg(args...) do {} while(0)
+/*#define ra_dbg(args...) do { printk(args); } while(0)*/
+
+#else
+
+#define ra_dbg(args...) do { printk(args); } while(0)
+#define _ra_inl(addr)  (*(volatile unsigned int *)(addr))
+#define _ra_outl(addr, value)  (*(volatile unsigned int *)(addr) = (value))
+
+
+u32 ra_inl(u32 addr)
+{	
+	u32 retval = _ra_inl(addr);
+	printk("%s(%x) => %x \n", __func__, addr, retval);
+
+	return retval;	
+}
+
+u32 ra_outl(u32 addr, u32 val)
+{
+	_ra_outl(addr, val);
+
+	printk("%s(%x, %x) \n", __func__, addr, val);
+
+	return val;	
+}
+
+#endif // SPI_DEBUG //
+
+#define ra_aor(addr, a_mask, o_value)  ra_outl(addr, (ra_inl(addr) & (a_mask)) | (o_value))
+#define ra_and(addr, a_mask)  ra_aor(addr, a_mask, 0)
+#define ra_or(addr, o_value)  ra_aor(addr, -1, o_value)
+#define PHYS_TO_K1(physaddr) KSEG1ADDR(physaddr)
+#define sysRegWrite(phys, val)  ((*(volatile unsigned int *)PHYS_TO_K1(phys)) = (val))
+int bbu_mb_spic_trans(const u8 code, const u32 addr, u8 *buf, const size_t n_tx, const size_t n_rx, int flag, int lcd);
+int bbu_spic_trans(const u8 code, const u32 addr, u8 *buf, const size_t n_tx, const size_t n_rx, int flag, int lcd);
+
+#define TRULY_USE 2
+#define LCD_USE 1
+#define FLASH_USE 0
+#define NO_USE 0
 
 #define SPI_REG_CTL		(RALINK_SPI_BASE + 0x00)
 #define SPI_REG_OPCODE		(RALINK_SPI_BASE + 0x04)
@@ -98,6 +145,7 @@ extern int spiflash_write(unsigned long to, unsigned long len,
 	unsigned long *retlen, const unsigned char *buf);
 
 /* Mapping of generic opcodes to STM serial flash opcodes */
+/*
 struct opcodes {
 	__u16 code;
 	__s8 tx_cnt;
@@ -118,5 +166,6 @@ struct opcodes {
 	{STM_OP_RD_STATUS2, 1, 1},
 	{STM_OP_HPM, 1, 0}
 };
+*/
 
 #endif

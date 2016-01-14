@@ -8,6 +8,12 @@ nf_conntrack-$(CONFIG_NF_CONNTRACK_LABELS) += nf_conntrack_labels.o
 
 obj-$(CONFIG_NETFILTER) = netfilter.o
 
+ifeq ($(CONFIG_NF_SHORTCUT_HOOK),y)
+obj-y += nf_shortcut_hook.o
+obj-m += nf_sc.o
+nf_sc-objs := nf_shortcut.o
+endif
+
 obj-$(CONFIG_NETFILTER_NETLINK) += nfnetlink.o
 obj-$(CONFIG_NETFILTER_NETLINK_ACCT) += nfnetlink_acct.o
 nfnetlink_queue-y := nfnetlink_queue_core.o

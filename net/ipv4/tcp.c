@@ -1602,6 +1602,21 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 		if (skb)
 			available = TCP_SKB_CB(skb)->seq + skb->len - (*seq);
+#if defined (CONFIG_SPLICE_NET_SUPPORT)
+		if (msg->msg_flags & MSG_KERNSPACE) {
+			if ((available >= target) &&
+			   (len > sysctl_tcp_dma_copybreak) && !(flags & MSG_PEEK) &&
+			   !sysctl_tcp_low_latency &&
+			   net_dma_find_channel()) {
+				preempt_enable_no_resched();
+				tp->ucopy.pinned_list =
+					dma_pin_kernel_iovec_pages(msg->msg_iov, len);
+			} else {
+				preempt_enable_no_resched();
+			}
+		}
+	}	
+#else
 		if ((available < target) &&
 		    (len > sysctl_tcp_dma_copybreak) && !(flags & MSG_PEEK) &&
 		    !sysctl_tcp_low_latency &&
@@ -1613,6 +1628,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			preempt_enable_no_resched();
 		}
 	}
+#endif
 #endif
 
 	do {
@@ -1669,6 +1685,11 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				break;
 
 			if (sk->sk_err) {
+#if defined (CONFIG_SPLICE_NET_SUPPORT)
+				if ((msg->msg_flags & MSG_KERNSPACE) &&
+					ECONNRESET == sk->sk_err )
+					printk("connection reset by peer.\n");
+#endif
 				copied = sock_error(sk);
 				break;
 			}
@@ -1853,8 +1874,13 @@ do_prequeue:
 			} else
 #endif
 			{
-				err = skb_copy_datagram_iovec(skb, offset,
-						msg->msg_iov, used);
+#if defined (CONFIG_SPLICE_NET_SUPPORT)
+				if (msg->msg_flags & MSG_KERNSPACE)
+					err = skb_copy_datagram_iovec_kernel(skb, offset, msg->msg_iov, used);
+				else
+#endif
+					err = skb_copy_datagram_iovec(skb, offset,
+							msg->msg_iov, used);
 				if (err) {
 					/* Exception. Bailout! */
 					if (!copied)
@@ -1920,7 +1946,12 @@ skip_copy:
 	tp->ucopy.dma_chan = NULL;
 
 	if (tp->ucopy.pinned_list) {
-		dma_unpin_iovec_pages(tp->ucopy.pinned_list);
+#if defined (CONFIG_SPLICE_NET_SUPPORT)
+		if (msg->msg_flags & MSG_KERNSPACE)
+			dma_unpin_kernel_iovec_pages(tp->ucopy.pinned_list);
+		else
+#endif
+			dma_unpin_iovec_pages(tp->ucopy.pinned_list);
 		tp->ucopy.pinned_list = NULL;
 	}
 #endif

@@ -23,8 +23,11 @@
 #endif
 
 static int xfrm_output2(struct sk_buff *skb);
-
+#if defined (CONFIG_RALINK_HWCRYPTO) || defined (CONFIG_RALINK_HWCRYPTO_MODULE)
 int xfrm_skb_check_space(struct sk_buff *skb)
+#else
+static int xfrm_skb_check_space(struct sk_buff *skb)
+#endif
 {
 	struct dst_entry *dst = skb_dst(skb);
 	int nhead = dst->header_len + LL_RESERVED_SPACE(dst->dev)
@@ -41,7 +44,7 @@ int xfrm_skb_check_space(struct sk_buff *skb)
 	return pskb_expand_head(skb, nhead, ntail, GFP_ATOMIC);
 }
 
-int xfrm_output_one(struct sk_buff *skb, int err)
+static int xfrm_output_one(struct sk_buff *skb, int err)
 {
 	struct dst_entry *dst = skb_dst(skb);
 	struct xfrm_state *x = dst->xfrm;

@@ -48,7 +48,13 @@
 #define RT2880_PCIE_PHY_WRITE		8
 #define RT2880_I2C_SET_CLKDIV		12
 #define RT2880_I2C_AUTHCP_CMD		11
-
+#if defined (CONFIG_FB_MEDIATEK_ILITEK) || defined (CONFIG_FB_MEDIATEK_TRULY)&& defined (CONFIG_RALINK_MT7621)
+#define Touch_Router_Read 13
+#define Touch_Router_Write 14
+#define Touch_Router_Read_Channel 15
+#define Touch_Router_Write_CMD 16
+#define Touch_Router_Get 17
+#endif
 #define I2C_DEV_NAME			"i2cM0"
 
 typedef struct i2c_write_data {

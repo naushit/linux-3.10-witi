@@ -72,6 +72,9 @@ HwNatIoctl(struct inode *inode, struct file *filp,
 	case HW_NAT_UNBIND_ENTRY:
 		opt->result = FoeUnBindEntry(opt);
 		break;
+	case HW_NAT_DROP_ENTRY:
+		opt->result = FoeDropEntry(opt);
+		break;
 	case HW_NAT_INVALID_ENTRY:
 		opt->result = FoeDelEntryByNum(opt->entry_num);
 		break;
@@ -223,7 +226,7 @@ int32_t PpeGetAGCnt(struct hwnat_ac_args * opt3)
 #if defined (CONFIG_RALINK_MT7620)
         ac_info[opt3->ag_index].ag_byte_cnt += RegRead(AC_BASE + opt3->ag_index * 8);      /* Low bytes */
         ac_info[opt3->ag_index].ag_pkt_cnt  += RegRead(AC_BASE + opt3->ag_index * 8 + 4);  /* High bytes */
-#elif defined (CONFIG_RALINK_MT7621)
+#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
         ac_info[opt3->ag_index].ag_byte_cnt += RegRead(AC_BASE + opt3->ag_index * 16);           /* 64bit bytes cnt */
         ac_info[opt3->ag_index].ag_byte_cnt += ((unsigned long long)(RegRead(AC_BASE + opt3->ag_index * 16 + 4)) << 32);
         ac_info[opt3->ag_index].ag_pkt_cnt  += RegRead(AC_BASE +  opt3->ag_index * 16 + 8);      /* 32bites packet cnt */
@@ -234,7 +237,7 @@ int32_t PpeGetAGCnt(struct hwnat_ac_args * opt3)
 #if defined (CONFIG_RALINK_MT7620)
         opt3->ag_byte_cnt = RegRead(AC_BASE + opt3->ag_index * 8);       /* Low bytes */
         opt3->ag_pkt_cnt = RegRead(AC_BASE + opt3->ag_index * 8 + 4);    /* High bytes */
-#elif defined (CONFIG_RALINK_MT7621)
+#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
         opt3->ag_byte_cnt = RegRead(AC_BASE + opt3->ag_index * 16);     /* 64bit bytes cnt */
 	opt3->ag_byte_cnt += ((unsigned long long)(RegRead(AC_BASE + opt3->ag_index * 16 + 4)) << 32);
         opt3->ag_pkt_cnt = RegRead(AC_BASE + opt3->ag_index * 16 + 8);  /* 32bites packet cnt */

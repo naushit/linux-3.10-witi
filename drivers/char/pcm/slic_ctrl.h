@@ -48,7 +48,12 @@
 #define _TC3262SLIC_H
 
 #include <linux/autoconf.h>
+
+#if defined (CONFIG_ARCH_MT7623) || defined (CONFIG_ARCH_MT7622)
+#include <asm/rt2880/rt_mmap.h>
+#else
 #include <asm/mach-ralink/rt_mmap.h>
+#endif				
 /*********************************
  * Return Values *
  *********************************/

@@ -438,6 +438,7 @@ static void gic_irqdispatch(void)
         if (likely(irq < GIC_NUM_INTRS))  {
                 do_IRQ(MIPS_GIC_IRQ_BASE + irq);  
 	}
+
 }
 #endif // CONFIG_IRQ_GIC //
 

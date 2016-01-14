@@ -110,7 +110,7 @@ typedef struct {
 	uint32_t CRSN:5;
 	uint32_t SPORT:3;
 	uint32_t ALG:10;
-#elif defined (CONFIG_RALINK_MT7621)
+#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 	uint16_t MAGIC_TAG;
 	uint32_t FOE_Entry:14;
 	uint32_t CRSN:5;

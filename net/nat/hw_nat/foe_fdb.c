@@ -30,6 +30,9 @@
 #include "pptp_l2tp_fdb.h"
 #endif
 extern struct FoeEntry *PpeFoeBase;
+#if defined (CONFIG_RA_HW_NAT_PACKET_SAMPLING)
+extern struct PsEntry *PpePsBase;
+#endif
 extern uint32_t DebugLevel;
 
 #if defined (CONFIG_HNAT_V2)
@@ -242,6 +245,9 @@ int FoeDumpCacheEntry(void)
 void FoeDumpEntry(uint32_t Index)
 {
 	struct FoeEntry *entry = &PpeFoeBase[Index];
+#if defined (CONFIG_RA_HW_NAT_PACKET_SAMPLING)
+	struct PsEntry *ps_entry = &PpePsBase[Index];
+#endif	
 	uint32_t *p = (uint32_t *)entry;
 	uint32_t i = 0;
 
@@ -252,7 +258,7 @@ void FoeDumpEntry(uint32_t Index)
 #else
 		for(i=0; i < 16; i++) { // 64 bytes per entry
 #endif
-			printk("%02d: %08X\n", i,*(p+i));
+			NAT_PRINT("%02d: %08X\n", i,*(p+i));
 		}
 	}
 	NAT_PRINT("-----------------<Flow Info>------------------\n");
@@ -398,6 +404,18 @@ void FoeDumpEntry(uint32_t Index)
 	    NAT_PRINT("=========================================\n\n");
 	} 
 #endif
+
+#if defined (CONFIG_RA_HW_NAT_PACKET_SAMPLING)
+	p = (uint32_t *)ps_entry;
+
+	NAT_PRINT("==========<PS Table Entry=%d (%p)>===============\n", Index, ps_entry);
+	//if (DebugLevel >= 2) {
+		for(i=0; i < 4; i++) { // 16 bytes per entry
+			printk("%02d: %08X\n", i,*(p+i));
+		}
+	//}
+
+#endif
 }
 
 int FoeGetAllEntries(struct hwnat_args *opt)
@@ -505,6 +523,7 @@ int FoeGetAllEntries(struct hwnat_args *opt)
 #if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
             //pptp_l2tp_fdb_dump();
 #endif
+
 	if (opt->num_of_entries > 0) {
 		return HWNAT_SUCCESS;
 	} else {
@@ -540,6 +559,30 @@ int FoeUnBindEntry(struct hwnat_args *opt)
 #endif
 	return HWNAT_SUCCESS;
 }
+
+int _FoeDropEntry(unsigned int entry_num)
+{
+	struct FoeEntry *entry;
+	
+	entry = &PpeFoeBase[entry_num];
+	
+	entry->ipv4_hnapt.iblk2.dp = 7;
+
+#if defined (CONFIG_HNAT_V2)
+	PpeSetCacheEbl(); /*clear HWNAT cache*/
+#endif
+
+	return HWNAT_SUCCESS;
+}
+
+EXPORT_SYMBOL(_FoeDropEntry);
+
+
+int FoeDropEntry(struct hwnat_args *opt)
+{
+	return _FoeDropEntry(opt->entry_num);
+}
+
 
 int FoeDelEntryByNum(uint32_t entry_num)
 {

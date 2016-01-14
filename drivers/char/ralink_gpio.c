@@ -373,12 +373,27 @@ int ralink_gpio_ioctl(struct inode *inode, struct file *file, unsigned int req,
 			}
 #elif defined (RALINK_GPIO_HAS_9532)
 			if (info.irq <= 31) {
-				tmp = le32_to_cpu(*(volatile u32 *)(RALINK_REG_PIORENA));
-				tmp |= (0x1 << info.irq);
-				*(volatile u32 *)(RALINK_REG_PIORENA) = cpu_to_le32(tmp);
-				tmp = le32_to_cpu(*(volatile u32 *)(RALINK_REG_PIOFENA));
-				tmp |= (0x1 << info.irq);
-				*(volatile u32 *)(RALINK_REG_PIOFENA) = cpu_to_le32(tmp);
+#if defined (CONFIG_FB_MEDIATEK_ILITEK) || defined (CONFIG_FB_MEDIATEK_TRULY)&& defined (CONFIG_RALINK_MT7621)
+				if(info.irq !=10){
+					tmp = le32_to_cpu(*(volatile u32 *)(RALINK_REG_PIORENA));
+					tmp |= (0x1 << info.irq);
+					*(volatile u32 *)(RALINK_REG_PIORENA) = cpu_to_le32(tmp);
+					tmp = le32_to_cpu(*(volatile u32 *)(RALINK_REG_PIOFENA));
+					tmp |= (0x1 << info.irq);
+					*(volatile u32 *)(RALINK_REG_PIOFENA) = cpu_to_le32(tmp);
+				}else if (info.irq ==10){
+					tmp = le32_to_cpu(*(volatile u32 *)(RALINK_REG_PIOFENA));
+					tmp |= (0x1 << info.irq);
+					*(volatile u32 *)(RALINK_REG_PIOFENA) = cpu_to_le32(tmp);
+				}
+#else
+					tmp = le32_to_cpu(*(volatile u32 *)(RALINK_REG_PIORENA));
+					tmp |= (0x1 << info.irq);
+					*(volatile u32 *)(RALINK_REG_PIORENA) = cpu_to_le32(tmp);
+					tmp = le32_to_cpu(*(volatile u32 *)(RALINK_REG_PIOFENA));
+					tmp |= (0x1 << info.irq);
+					*(volatile u32 *)(RALINK_REG_PIOFENA) = cpu_to_le32(tmp);
+#endif
 			} else if (info.irq <= 63) {
 				tmp = le32_to_cpu(*(volatile u32 *)(RALINK_REG_PIO6332RENA));
 				tmp |= (0x1 << (info.irq-32));
@@ -2556,13 +2571,19 @@ void ralink_gpio_notify_user(int usr)
 	}
 
 	if (usr == 1) {
+		#if defined (CONFIG_FB_MEDIATEK_ILITEK) || defined (CONFIG_FB_MEDIATEK_TRULY)&& defined (CONFIG_RALINK_MT7621)
+		#else
 		printk(KERN_NOTICE NAME ": sending a SIGUSR1 to process %d\n",
 				ralink_gpio_info[ralink_gpio_irqnum].pid);
+		#endif
 		send_sig(SIGUSR1, p, 0);
 	}
 	else if (usr == 2) {
+		#if defined (CONFIG_FB_MEDIATEK_ILITEK) || defined (CONFIG_FB_MEDIATEK_TRULY)&& defined (CONFIG_RALINK_MT7621)
+		#else
 		printk(KERN_NOTICE NAME ": sending a SIGUSR2 to process %d\n",
 				ralink_gpio_info[ralink_gpio_irqnum].pid);
+		#endif
 		send_sig(SIGUSR2, p, 0);
 	}
 }
@@ -2641,7 +2662,9 @@ void ralink_gpio_save_clear_intp(void)
 
 #endif
 }
-
+#if defined (CONFIG_FB_MEDIATEK_ILITEK) || defined (CONFIG_FB_MEDIATEK_TRULY)&& defined (CONFIG_RALINK_MT7621)
+int lcdtimes=0;
+#endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
 void ralink_gpio_irq_handler(unsigned int irq, struct irqaction *irqaction)
 #else
@@ -2739,6 +2762,17 @@ irqreturn_t ralink_gpio_irq_handler(int irq, void *irqaction)
 		}
 		else { //falling edge
 			 record[i].falling = now;
+			#if defined (CONFIG_FB_MEDIATEK_ILITEK) || defined (CONFIG_FB_MEDIATEK_TRULY)&& defined (CONFIG_RALINK_MT7621)
+			
+			  lcdtimes++;
+			  if(lcdtimes <=4 ){
+			    schedule_work(&gpio_event_click);
+				}
+				if (lcdtimes > 4){
+					schedule_work(&gpio_event_hold);
+					lcdtimes=0;
+		  	}
+			#endif
 		}
 		break;
 	}

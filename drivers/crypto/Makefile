@@ -23,3 +23,6 @@ obj-$(CONFIG_CRYPTO_DEV_ATMEL_TDES) += atmel-tdes.o
 obj-$(CONFIG_CRYPTO_DEV_ATMEL_SHA) += atmel-sha.o
 obj-$(CONFIG_CRYPTO_DEV_MTK_AES) += aes_engine/
 obj-$(CONFIG_CRYPTO_DEV_MTK_AES) += cryptodev/
+
+obj-$(CONFIG_CRYPTO_DEV_MTK_AES) += aes_engine/
+obj-$(CONFIG_CRYPTO_DEV_MTK_AES) += cryptodev/

@@ -474,29 +474,18 @@ refill:
 				goto end;
 		}
 		nc->frag.size = PAGE_SIZE << order;
-		/* Even if we own the page, we do not use atomic_set().
-		 * This would break get_page_unless_zero() users.
-		 */
-		atomic_add(NETDEV_PAGECNT_MAX_BIAS - 1,
-			   &nc->frag.page->_count);
+recycle:
+		atomic_set(&nc->frag.page->_count, NETDEV_PAGECNT_MAX_BIAS);
 		nc->pagecnt_bias = NETDEV_PAGECNT_MAX_BIAS;
 		nc->frag.offset = 0;
 	}
 
 	if (nc->frag.offset + fragsz > nc->frag.size) {
-		if (atomic_read(&nc->frag.page->_count) != nc->pagecnt_bias) {
-			if (!atomic_sub_and_test(nc->pagecnt_bias,
-						 &nc->frag.page->_count))
-				goto refill;
-			/* OK, page count is 0, we can safely set it */
-			atomic_set(&nc->frag.page->_count,
-				   NETDEV_PAGECNT_MAX_BIAS);
-		} else {
-			atomic_add(NETDEV_PAGECNT_MAX_BIAS - nc->pagecnt_bias,
-				   &nc->frag.page->_count);
-		}
-		nc->pagecnt_bias = NETDEV_PAGECNT_MAX_BIAS;
-		nc->frag.offset = 0;
+		/* avoid unnecessary locked operations if possible */
+		if ((atomic_read(&nc->frag.page->_count) == nc->pagecnt_bias) ||
+		    atomic_sub_and_test(nc->pagecnt_bias, &nc->frag.page->_count))
+			goto recycle;
+		goto refill;
 	}
 
 	data = page_address(nc->frag.page) + nc->frag.offset;
@@ -540,12 +529,9 @@ struct sk_buff *__netdev_alloc_skb(struct net_device *dev,
 	unsigned int fragsz = SKB_DATA_ALIGN(length + NET_SKB_PAD) +
 			      SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
 
-//    printk("[__netdev_alloc_skb]fragsz=%d, PAGE_SIZE=%d, length=%d\n", fragsz, PAGE_SIZE, length);
-
 	if (fragsz <= PAGE_SIZE && !(gfp_mask & (__GFP_WAIT | GFP_DMA))) {
 		void *data;
 
-//		printk("__netdev_alloc_frag() & build_skb()\n");
 		if (sk_memalloc_socks())
 			gfp_mask |= __GFP_MEMALLOC;
 
@@ -557,7 +543,6 @@ struct sk_buff *__netdev_alloc_skb(struct net_device *dev,
 				put_page(virt_to_head_page(data));
 		}
 	} else {
-//		printk(" __alloc_skb():length=%d\n", length);
 		skb = __alloc_skb(length + NET_SKB_PAD, gfp_mask,
 				  SKB_ALLOC_RX, NUMA_NO_NODE);
 	}
@@ -646,7 +631,6 @@ static void kfree_skbmem(struct sk_buff *skb)
 
 	switch (skb->fclone) {
 	case SKB_FCLONE_UNAVAILABLE:
-//		printk("[SKB_FCLONE_UNAVAILABLE]kmem_cache_free()\n");
 		kmem_cache_free(skbuff_head_cache, skb);
 		break;
 
@@ -889,6 +873,14 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	new->skb_recycling_callback = NULL;
 #endif
 
+#if defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+#if defined (HNAT_USE_HEADROOM)
+        memcpy(new->head, old->head, FOE_INFO_LEN);
+#elif defined (HNAT_USE_TAILROOM)
+        memcpy( (new->head + (old->end - old->head) - FOE_INFO_LEN), (old->end - FOE_INFO_LEN), FOE_INFO_LEN); //copy tailroom
+#endif
+#endif
+	
 	skb_copy_secmark(new, old);
 }
 

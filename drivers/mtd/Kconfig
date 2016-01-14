@@ -12,31 +12,31 @@ menuconfig MTD
 
 if MTD
 
+if SUPPORT_OPENWRT
 menu "OpenWrt specific MTD options"
 
 config MTD_ROOTFS_ROOT_DEV
         bool "Automatically set 'rootfs' partition to be root filesystem"
-        default n
+        default y
 
 config MTD_ROOTFS_SPLIT
         bool "Automatically split 'rootfs' partition for squashfs"
         select MTD_SPLIT
-        default n
+        default y
 
 config MTD_SPLIT_FIRMWARE
         bool "Automatically split firmware partition for kernel+rootfs"
-        default n
+        default y
 
 config MTD_SPLIT_FIRMWARE_NAME
         string "Firmware partition name"
         depends on MTD_SPLIT_FIRMWARE
         default "firmware"
-        default n
 
 config MTD_UIMAGE_SPLIT
         bool "Enable split support for firmware partitions containing a uImage"
         depends on MTD_SPLIT_FIRMWARE
-        default n
+        default y
 
 comment "Rootfs partition parsers"
 
@@ -53,17 +53,14 @@ comment "Firmware partition parsers"
 config MTD_SPLIT_SEAMA_FW
         bool "Seama firmware parser"
         select MTD_SPLIT
-        default n
 
 config MTD_SPLIT_UIMAGE_FW
         bool "uImage based firmware partition parser"
         select MTD_SPLIT
-        default n
 
 config MTD_SPLIT_LZMA_FW
         bool "LZMA compressed kernel based firmware partition parser"
         select MTD_SPLIT
-        default n
 
 config MTD_SPLIT
         def_bool n
@@ -72,6 +69,7 @@ config MTD_SPLIT
           Generic MTD split support.
 
 endmenu
+endif # SUPPORT_OPENWRT
 config MTD_TESTS
 	tristate "MTD tests support (DANGEROUS)"
 	depends on m

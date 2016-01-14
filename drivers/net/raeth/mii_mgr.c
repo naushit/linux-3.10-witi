@@ -12,7 +12,7 @@
 #include "raether.h"
 
 
-#if defined (CONFIG_RALINK_RT3052) || defined (CONFIG_RALINK_RT3352) || defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#if defined (CONFIG_RALINK_MT7628)
 #define PHY_CONTROL_0 		0xC0   
 #define PHY_CONTROL_1 		0xC4   
 #define MDIO_PHY_CONTROL_0	(RALINK_ETH_SW_BASE + PHY_CONTROL_0)
@@ -22,19 +22,13 @@
 #define GPIO_PURPOSE_SELECT	0x60
 #define GPIO_PRUPOSE		(RALINK_SYSCTL_BASE + GPIO_PURPOSE_SELECT)
 
-#elif defined (CONFIG_RALINK_RT6855)  || defined (CONFIG_RALINK_RT6855A)
-
-#define PHY_CONTROL_0 		0x7004   
-#define MDIO_PHY_CONTROL_0	(RALINK_ETH_SW_BASE + PHY_CONTROL_0)
-#define enable_mdio(x)
-
 #elif defined (CONFIG_RALINK_MT7620)
 
 #define PHY_CONTROL_0 		0x7004   
 #define MDIO_PHY_CONTROL_0	(RALINK_ETH_SW_BASE + PHY_CONTROL_0)
 #define enable_mdio(x)
 
-#elif defined (CONFIG_RALINK_MT7621)
+#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 
 #define PHY_CONTROL_0 		0x0004   
 #define MDIO_PHY_CONTROL_0	(RALINK_ETH_SW_BASE + PHY_CONTROL_0)
@@ -48,7 +42,7 @@
 #define enable_mdio(x)
 #endif
 
-#if defined (CONFIG_RALINK_RT3052) || defined (CONFIG_RALINK_RT3352) || defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#if defined (CONFIG_RALINK_MT7628)
 void enable_mdio(int enable)
 {
 #if !defined (CONFIG_P5_MAC_TO_PHY_MODE) && !defined(CONFIG_GE1_RGMII_AN) && !defined(CONFIG_GE2_RGMII_AN) && \
@@ -63,100 +57,7 @@ void enable_mdio(int enable)
 }
 #endif
 
-#if defined (CONFIG_RALINK_RT6855) || defined (CONFIG_RALINK_RT6855A)
-
-u32 mii_mgr_read(u32 phy_addr, u32 phy_register, u32 *read_data)
-{
-	u32 volatile status = 0;
-	u32 rc = 0;
-	unsigned long volatile t_start = jiffies;
-	u32 volatile data = 0;
-
-	/* We enable mdio gpio purpose register, and disable it when exit. */
-	enable_mdio(1);
-
-	// make sure previous read operation is complete
-	while (1) {
-			// 0 : Read/write operation complete
-		if(!( sysRegRead(MDIO_PHY_CONTROL_0) & (0x1 << 31))) 
-		{
-			break;
-		}
-		else if (time_after(jiffies, t_start + 5*HZ)) {
-			enable_mdio(0);
-			printk("\n MDIO Read operation is ongoing !!\n");
-			return rc;
-		}
-	}
-
-	data  = (0x01 << 16) | (0x02 << 18) | (phy_addr << 20) | (phy_register << 25);
-	sysRegWrite(MDIO_PHY_CONTROL_0, data);
-	data |= (1<<31);
-	sysRegWrite(MDIO_PHY_CONTROL_0, data);
-	//printk("\n Set Command [0x%08X] to PHY !!\n",MDIO_PHY_CONTROL_0);
-
-
-	// make sure read operation is complete
-	t_start = jiffies;
-	while (1) {
-		if (!(sysRegRead(MDIO_PHY_CONTROL_0) & (0x1 << 31))) {
-			status = sysRegRead(MDIO_PHY_CONTROL_0);
-			*read_data = (u32)(status & 0x0000FFFF);
-
-			enable_mdio(0);
-			return 1;
-		}
-		else if (time_after(jiffies, t_start+5*HZ)) {
-			enable_mdio(0);
-			printk("\n MDIO Read operation is ongoing and Time Out!!\n");
-			return 0;
-		}
-	}
-}
-
-u32 mii_mgr_write(u32 phy_addr, u32 phy_register, u32 write_data)
-{
-	unsigned long volatile t_start=jiffies;
-	u32 volatile data;
-
-	enable_mdio(1);
-
-	// make sure previous write operation is complete
-	while(1) {
-		if (!(sysRegRead(MDIO_PHY_CONTROL_0) & (0x1 << 31))) 
-		{
-			break;
-		}
-		else if (time_after(jiffies, t_start + 5 * HZ)) {
-			enable_mdio(0);
-			printk("\n MDIO Write operation ongoing\n");
-			return 0;
-		}
-	}
-
-	data = (0x01 << 16)| (1<<18) | (phy_addr << 20) | (phy_register << 25) | write_data;
-	sysRegWrite(MDIO_PHY_CONTROL_0, data);
-	data |= (1<<31);
-	sysRegWrite(MDIO_PHY_CONTROL_0, data); //start operation
-	//printk("\n Set Command [0x%08X] to PHY !!\n",MDIO_PHY_CONTROL_0);
-
-	t_start = jiffies;
-
-	// make sure write operation is complete
-	while (1) {
-		if (!(sysRegRead(MDIO_PHY_CONTROL_0) & (0x1 << 31))) //0 : Read/write operation complete
-		{
-			enable_mdio(0);
-			return 1;
-		}
-		else if (time_after(jiffies, t_start + 5 * HZ)) {
-			enable_mdio(0);
-			printk("\n MDIO Write operation Time Out\n");
-			return 0;
-		}
-	}
-}
-#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_RALINK_MT7620)
+#if   defined (CONFIG_RALINK_MT7621) || defined (CONFIG_RALINK_MT7620) || defined (CONFIG_ARCH_MT7623)
 
 u32 __mii_mgr_read(u32 phy_addr, u32 phy_register, u32 *read_data)
 {
@@ -186,7 +87,7 @@ u32 __mii_mgr_read(u32 phy_addr, u32 phy_register, u32 *read_data)
 	sysRegWrite(MDIO_PHY_CONTROL_0, data);
 	data |= (1<<31);
 	sysRegWrite(MDIO_PHY_CONTROL_0, data);
-	//printk("\n Set Command [0x%08X] to PHY !!\n",MDIO_PHY_CONTROL_0);
+	//printk("\n Set Command [0x%08X] = [0x%08X] to PHY !!\n",MDIO_PHY_CONTROL_0, data);
 
 
 	// make sure read operation is complete
@@ -252,9 +153,9 @@ u32 __mii_mgr_write(u32 phy_addr, u32 phy_register, u32 write_data)
 
 u32 mii_mgr_read(u32 phy_addr, u32 phy_register, u32 *read_data)
 {
+#if defined (CONFIG_GE1_RGMII_FORCE_1000) || defined (CONFIG_GE1_TRGMII_FORCE_1200) || defined (CONFIG_GE1_TRGMII_FORCE_2000) || defined (CONFIG_GE1_TRGMII_FORCE_2600) || defined (CONFIG_P5_RGMII_TO_MT7530_MODE)
         u32 low_word;
         u32 high_word;
-#if defined (CONFIG_GE1_RGMII_FORCE_1000) || (CONFIG_GE1_TRGMII_FORCE_1200) || (CONFIG_P5_RGMII_TO_MT7530_MODE)
         u32 an_status = 0;
         
 	if(phy_addr==31) 
@@ -293,7 +194,7 @@ u32 mii_mgr_read(u32 phy_addr, u32 phy_register, u32 *read_data)
 
 u32 mii_mgr_write(u32 phy_addr, u32 phy_register, u32 write_data)
 {
-#if defined (CONFIG_GE1_RGMII_FORCE_1000) || (CONFIG_GE1_TRGMII_FORCE_1200) || (CONFIG_P5_RGMII_TO_MT7530_MODE)
+#if defined (CONFIG_GE1_RGMII_FORCE_1000) || defined (CONFIG_GE1_TRGMII_FORCE_1200) || defined (CONFIG_GE1_TRGMII_FORCE_2000) || defined (CONFIG_GE1_TRGMII_FORCE_2600) || defined (CONFIG_P5_RGMII_TO_MT7530_MODE)
 	u32 an_status = 0;
         
 	if(phy_addr == 31) 
@@ -331,7 +232,6 @@ u32 mii_mgr_write(u32 phy_addr, u32 phy_register, u32 write_data)
 
 u32 mii_mgr_cl45_set_address(u32 port_num, u32 dev_addr, u32 reg_addr)
 {
-	u32 volatile status = 0;
 	u32 rc = 0;
 	unsigned long volatile t_start = jiffies;
 	u32 volatile data = 0;
@@ -418,7 +318,6 @@ u32 mii_mgr_read_cl45(u32 port_num, u32 dev_addr, u32 reg_addr, u32 *read_data)
 
 u32 mii_mgr_write_cl45	(u32 port_num, u32 dev_addr, u32 reg_addr, u32 write_data)
 {
-	u32 volatile status = 0;
 	u32 rc = 0;
 	unsigned long volatile t_start = jiffies;
 	u32 volatile data = 0;
@@ -478,7 +377,7 @@ u32 mii_mgr_read(u32 phy_addr, u32 phy_register, u32 *read_data)
 
 	// make sure previous read operation is complete
 	while (1) {
-#if defined (CONFIG_RALINK_RT3052) || defined (CONFIG_RALINK_RT3352) || defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#if defined (CONFIG_RALINK_MT7628)
 		// rd_rdy: read operation is complete
 		if(!( sysRegRead(MDIO_PHY_CONTROL_1) & (0x1 << 1))) 
 #else
@@ -495,7 +394,7 @@ u32 mii_mgr_read(u32 phy_addr, u32 phy_register, u32 *read_data)
 		}
 	}
 
-#if defined (CONFIG_RALINK_RT3052) || defined (CONFIG_RALINK_RT3352) || defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#if defined (CONFIG_RALINK_MT7628)
 	sysRegWrite(MDIO_PHY_CONTROL_0 , (1<<14) | (phy_register << 8) | (phy_addr));
 #else
 	data  = (phy_addr << 24) | (phy_register << 16);
@@ -509,7 +408,7 @@ u32 mii_mgr_read(u32 phy_addr, u32 phy_register, u32 *read_data)
 	// make sure read operation is complete
 	t_start = jiffies;
 	while (1) {
-#if defined (CONFIG_RALINK_RT3052) || defined (CONFIG_RALINK_RT3352) || defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#if defined (CONFIG_RALINK_MT7628)
 		if (sysRegRead(MDIO_PHY_CONTROL_1) & (0x1 << 1)) {
 			status = sysRegRead(MDIO_PHY_CONTROL_1);
 			*read_data = (u32)(status >>16);
@@ -544,7 +443,7 @@ u32 mii_mgr_write(u32 phy_addr, u32 phy_register, u32 write_data)
 
 	// make sure previous write operation is complete
 	while(1) {
-#if defined (CONFIG_RALINK_RT3052) || defined (CONFIG_RALINK_RT3352) || defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#if defined (CONFIG_RALINK_MT7628)
 		if (!(sysRegRead(MDIO_PHY_CONTROL_1) & (0x1 << 0)))
 #else
 		if (!(sysRegRead(MDIO_PHY_CONTROL_0) & (0x1 << 31))) 
@@ -559,7 +458,7 @@ u32 mii_mgr_write(u32 phy_addr, u32 phy_register, u32 write_data)
 		}
 	}
 
-#if defined (CONFIG_RALINK_RT3052) || defined (CONFIG_RALINK_RT3352) || defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#if defined (CONFIG_RALINK_MT7628)
 	data = ((write_data & 0xFFFF) << 16);
 	data |= (phy_register << 8) | (phy_addr);
 	data |= (1<<13);
@@ -576,7 +475,7 @@ u32 mii_mgr_write(u32 phy_addr, u32 phy_register, u32 write_data)
 
 	// make sure write operation is complete
 	while (1) {
-#if defined (CONFIG_RALINK_RT3052) || defined (CONFIG_RALINK_RT3352) || defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#if defined (CONFIG_RALINK_MT7628)
 		if (sysRegRead(MDIO_PHY_CONTROL_1) & (0x1 << 0)) //wt_done ?= 1
 #else
 		if (!(sysRegRead(MDIO_PHY_CONTROL_0) & (0x1 << 31))) //0 : Read/write operation complete

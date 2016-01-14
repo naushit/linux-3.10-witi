@@ -85,6 +85,11 @@
 #include "../../net/nat/hw_nat/frame_engine.h"
 #endif
 
+#ifdef CONFIG_NF_SHORTCUT_HOOK
+extern int (*smb_nf_local_out_hook)(struct sk_buff *skb);
+extern int (*smb_nf_post_routing_hook)(struct sk_buff *skb);
+#endif
+
 int sysctl_ip_default_ttl __read_mostly = IPDEFTTL;
 EXPORT_SYMBOL(sysctl_ip_default_ttl);
 
@@ -102,6 +107,11 @@ int __ip_local_out(struct sk_buff *skb)
 
 	iph->tot_len = htons(skb->len);
 	ip_send_check(iph);
+#ifdef CONFIG_NF_SHORTCUT_HOOK
+	if (smb_nf_local_out_hook && smb_nf_local_out_hook(skb))
+		return dst_output(skb);
+	else 
+#endif 
 	return nf_hook(NFPROTO_IPV4, NF_INET_LOCAL_OUT, skb, NULL,
 		       skb_dst(skb)->dev, dst_output);
 }
@@ -309,6 +319,11 @@ int ip_output(struct sk_buff *skb)
 	skb->dev = dev;
 	skb->protocol = htons(ETH_P_IP);
 
+#ifdef CONFIG_NF_SHORTCUT_HOOK
+	if (smb_nf_post_routing_hook && smb_nf_post_routing_hook(skb))
+		return ip_finish_output(skb);
+	else 
+#endif
 	return NF_HOOK_COND(NFPROTO_IPV4, NF_INET_POST_ROUTING, skb, NULL, dev,
 			    ip_finish_output,
 			    !(IPCB(skb)->flags & IPSKB_REROUTED));
@@ -406,8 +421,16 @@ packet_routed:
 	skb->mark = sk->sk_mark;
 
 #if  defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
+#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
+    /* only clear headeroom for TCP OR not L2TP packets */
+    if( (iph->protocol == 0x6) || (ntohs(udp_hdr(skb)->dest) != 1701) ) {
         FOE_MAGIC_TAG(skb) = 0;
         FOE_AI(skb) = UN_HIT;
+    }
+#else
+    FOE_MAGIC_TAG(skb) = 0;
+    FOE_AI(skb) = UN_HIT;
+#endif
 #endif
 
 	res = ip_local_out(skb);

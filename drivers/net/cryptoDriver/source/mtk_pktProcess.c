@@ -702,7 +702,8 @@ mtk_packet_put(
 **_______________________________________________________________________*/
 static int
 mtk_packet_get(
-	eip93DescpHandler_t *resDescp
+	eip93DescpHandler_t *resDescp,
+	unsigned int rdx
 )
 {
 	unsigned int *pRrd = pResRingBase;
@@ -880,7 +881,7 @@ mtk_packet_get(
 
 static bool
 mtk_eip93CmdResCnt_check(
-	void
+	unsigned int rdx	
 )
 {
 	return (
@@ -960,7 +961,7 @@ void mtk_BH_handler_resultGet(
 	unsigned long data
 )
 {
-	ipsec_BH_handler_resultGet();
+	ipsec_BH_handler_resultGet(0);
 	Adapter_Interrupt_ClearAndEnable(IRQ_RDR_THRESH_IRQ);
 }
 

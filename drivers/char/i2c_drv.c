@@ -79,6 +79,10 @@ static devfs_handle_t devfs_handle;
 extern void mt6605_sim(void);
 #endif
 
+#if defined (CONFIG_FB_MEDIATEK_ILITEK) || defined (CONFIG_FB_MEDIATEK_TRULY)&& defined (CONFIG_RALINK_MT7621)
+int TOUCH_GPIO_RESET = 12; //NRST ==>GPIO12
+u32 value_user;
+#endif
 int i2cdrv_major =  218;
 unsigned long i2cdrv_addr = ATMEL_ADDR;
 //unsigned long i2cdrv_addr = 0x70;
@@ -104,6 +108,18 @@ unsigned long switch_address_bytes(unsigned long addr_bytes)
 void i2c_master_init(void)
 {
 	u32 i;
+#if defined (CONFIG_FB_MEDIATEK_ILITEK) || defined (CONFIG_FB_MEDIATEK_TRULY)&& defined (CONFIG_RALINK_MT7621)
+    RT2880_REG(RALINK_REG_PIODIR) =0x1200 ;
+    //printk("RALINK_REG_PIODIR = %x\n", RT2880_REG(RALINK_REG_PIODIR));
+   // RT2880_REG(RALINK_REG_PIODIR) = (1 << TOUCH_GPIO_RESET);
+		RT2880_REG(RALINK_REG_PIOSET) = (1 << TOUCH_GPIO_RESET);
+		mdelay(10);
+		RT2880_REG(RALINK_REG_PIORESET) = (1 << TOUCH_GPIO_RESET);
+		mdelay(10);
+		RT2880_REG(RALINK_REG_PIOSET) = (1 << TOUCH_GPIO_RESET);
+		mdelay(120);	
+
+#endif
 #if defined (CONFIG_RALINK_MT7621)
 	RT2880_REG(RALINK_SYSCTL_BASE + 0x60) &= ~0x4;  //MT7621 bit2
 	udelay(500);
@@ -179,9 +195,9 @@ void i2c_WM8751_write(u32 address, u32 data)
 	int i, j;
 	unsigned long old_addr = i2cdrv_addr;
 	
-#if defined(CONFIG_SND_SOC_WM8960) || ((!defined(CONFIG_SND_RALINK_SOC)) && defined(CONFIG_I2S_WM8960))
+#if defined(CONFIG_SND_SOC_WM8960) || defined(CONFIG_I2S_WM8960)
 	i2cdrv_addr = WM8960_ADDR;
-#elif defined(CONFIG_SND_SOC_WM8750) || ((!defined(CONFIG_SND_RALINK_SOC)) && defined(CONFIG_I2S_WM8750)) || ((!defined(CONFIG_SND_RALINK_SOC)) && defined(CONFIG_I2S_WM8751))
+#elif defined(CONFIG_SND_SOC_WM8750) || defined(CONFIG_I2S_WM8750) || defined(CONFIG_I2S_WM8751)
 	i2cdrv_addr = WM8751_ADDR;
 #else
 	i2cdrv_addr = WM8960_ADDR;
@@ -430,7 +446,44 @@ void i2c_eeprom_dump(void)
 			printk("\n");
 	}
 }
+#if defined (CONFIG_FB_MEDIATEK_ILITEK) || defined (CONFIG_FB_MEDIATEK_TRULY)&& defined (CONFIG_RALINK_MT7621)
+void i2c_write_touch_cmd(u8 address)
+{
+  u8 data;//dummy write	
+	i2cdrv_addr = 0x48;
+	switch_address_bytes(1);
+	i2c_master_init();
+	i2c_write(address, &data, 0);
+}
+void i2c_write_touch(u8 address, u8 data)
+{
+	i2cdrv_addr = 0x48;
+	switch_address_bytes(1);
+	i2c_master_init();
+	i2c_write(address, &data, 1);
+}
+u8 i2c_read_touch(u8 address)
+{
+	u8 data;
+	//i2cdrv_addr = 0x48;
+	//switch_address_bytes(1);
+	//i2c_master_init();
+	i2c_write(address, &data, 0); //write CR
+	i2c_read(&data, 1);
+	return (data);
+}
 
+u32 i2c_read_touch_channel() 
+{
+	u32 data;
+	//i2cdrv_addr = 0x48;
+	//switch_address_bytes(1);
+	//i2c_master_init();
+	i2c_read(&data, 4);
+	//i2c_read(&data, 1);
+	return (data);
+}
+#endif
 #if defined (CONFIG_MT7621_FPGA) || defined (CONFIG_MT7628_FPGA)
 /*----------------------------------------------------------------------*/
 /*   Function                                                           */
@@ -1024,7 +1077,9 @@ int i2cdrv_ioctl(struct inode *inode, struct file *filp, \
 	unsigned int address, size;
 	u8 value, *tmp;
 	I2C_WRITE *s_i2c_write;
-
+#if defined (CONFIG_FB_MEDIATEK_ILITEK) || defined (CONFIG_FB_MEDIATEK_TRULY)&& defined (CONFIG_RALINK_MT7621)
+    u32 value32;
+  #endif
 	switch (cmd) {
 	case RT2880_PCIE_PHY_READ:
 		value = 0; address = 0;
@@ -1148,6 +1203,37 @@ int i2cdrv_ioctl(struct inode *inode, struct file *filp, \
 			}
 		}
 		break;	
+		#if defined (CONFIG_FB_MEDIATEK_ILITEK) || defined (CONFIG_FB_MEDIATEK_TRULY)&& defined (CONFIG_RALINK_MT7621)
+	case Touch_Router_Read:
+		value = 0; address = 0;
+		address = (unsigned int)arg;
+		value = i2c_read_touch(address);
+		value_user = value;
+		
+		//printk("0x%0x : 0x%x\n", address, (unsigned char)value);
+		break;
+
+	case Touch_Router_Write:
+		s_i2c_write = (I2C_WRITE*)arg;
+		address = s_i2c_write->address;
+		value   = s_i2c_write->value;
+		i2c_write_touch(address, value);
+		break;
+	case Touch_Router_Read_Channel:
+		value32 = 0;
+		value32 = i2c_read_touch_channel();
+		value_user=value32;
+		mdelay(20);
+		break;
+	case Touch_Router_Write_CMD:
+		s_i2c_write = (I2C_WRITE*)arg;
+		address = s_i2c_write->address;
+		i2c_write_touch_cmd(address);
+		break;
+	case Touch_Router_Get:
+		put_user(value_user, (int __user *)arg);
+		break;	
+#endif
 	default :
 		printk("i2c_drv: command format error\n");
 	}

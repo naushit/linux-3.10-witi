@@ -33,7 +33,7 @@
 #define NAT_DEBUG
 
 #ifdef NAT_DEBUG
-#define NAT_PRINT(fmt, args...) printk(KERN_INFO fmt, ## args)
+#define NAT_PRINT(fmt, args...) printk(fmt, ## args)
 #else
 #define NAT_PRINT(fmt, args...) { }
 #endif
@@ -161,7 +161,7 @@
 #define CAH_TAG_SRH	    RALINK_PPE_BASE + 0x324
 #define CAH_LINE_RW	    RALINK_PPE_BASE + 0x328
 #define CAH_WDATA	    RALINK_PPE_BASE + 0x32C
-#elif defined (CONFIG_RALINK_MT7621)
+#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 #define PPE_DFT_CPORT       RALINK_PPE_BASE + 0x248 
 #define PPE_MCAST_PPSE	    RALINK_PPE_BASE + 0x284
 #define PPE_MCAST_L_0       RALINK_PPE_BASE + 0x288
@@ -208,6 +208,15 @@
 #define CAH_WDATA           RALINK_PPE_BASE + 0x32C
 #define CAH_RDATA           RALINK_PPE_BASE + 0x330
 
+
+#if defined (CONFIG_RA_HW_NAT_PACKET_SAMPLING)
+#define PS_CFG	            RALINK_PPE_BASE + 0x400
+#define PS_FBC		    RALINK_PPE_BASE + 0x404
+#define PS_TB_BASE	    RALINK_PPE_BASE + 0x408
+#define PS_TME_SMP	    RALINK_PPE_BASE + 0x40C
+#endif
+
+
 #endif // CONFIG_RALINK_MT7620 //
 
 /* 
@@ -220,12 +229,6 @@
  * CAH_RDATA[15:0]: entry num 
  */
 #define CAH_RDATA	    RALINK_PPE_BASE + 0x330
-
-#define GDM1_OFRC_P_CPU     (0 << 0)
-#define GDM1_MFRC_P_CPU     (0 << 4)
-#define GDM1_BFRC_P_CPU     (0 << 8)
-#define GDM1_UFRC_P_CPU     (0 << 12)
-
 /* TO PPE */
 #define IPV4_PPE_MYUC	    (1 << 0) //my mac
 #define IPV4_PPE_MC	    (1 << 1) //multicast
@@ -241,7 +244,7 @@
 #define IPV6_PPE_UC	    (1 << 12) //ipv6 learned UC frame
 #define IPV6_PPE_UN	    (1 << 13) //ipv6 unknown  UC frame
 
-#if defined(CONFIG_RALINK_MT7621)
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 #define AC_BASE		    RALINK_FRAME_ENGINE_BASE + 0x2000
 #define METER_BASE	    RALINK_FRAME_ENGINE_BASE + 0x2000
 
@@ -249,29 +252,46 @@
 #define FE_GDMA2_FWD_CFG    RALINK_FRAME_ENGINE_BASE + 0x1500
 
 /* GDMA1 My MAC unicast frame destination port */
+#if defined (CONFIG_RAETH_QDMATX_QDMARX)
+#define GDM1_UFRC_P_CPU     (5 << 12)
+#else
 #define GDM1_UFRC_P_CPU     (0 << 12)
+#endif
 #define GDM1_UFRC_P_PPE     (4 << 12)
-#define GDM1_UFRC_P_QDMA    (5 << 12)
 
 /* GDMA1 broadcast frame MAC address destination port */
+#if defined (CONFIG_RAETH_QDMATX_QDMARX)
+#define GDM1_BFRC_P_CPU     (5 << 8)
+#else
 #define GDM1_BFRC_P_CPU     (0 << 8)
+#endif
 #define GDM1_BFRC_P_PPE     (4 << 8)
-#define GDM1_BFRC_P_QDMA    (5 << 8)
 
 /* GDMA1 multicast frame MAC address destination port */
+#if defined (CONFIG_RAETH_QDMATX_QDMARX)
+#define GDM1_MFRC_P_CPU     (5 << 4)
+#else
 #define GDM1_MFRC_P_CPU     (0 << 4)
+#endif
 #define GDM1_MFRC_P_PPE     (4 << 4)
-#define GDM1_MFRC_P_QDMA    (5 << 4)
 
 /* GDMA1 other MAC address frame destination port */
+#if defined (CONFIG_RAETH_QDMATX_QDMARX)
+#define GDM1_OFRC_P_CPU     (5 << 0)
+#else
 #define GDM1_OFRC_P_CPU     (0 << 0)
+#endif
 #define GDM1_OFRC_P_PPE     (4 << 0)
-#define GDM1_OFRC_P_QDMA    (5 << 0)
 
 #else
+
+#define GDM1_OFRC_P_CPU     (0 << 0)
+#define GDM1_MFRC_P_CPU     (0 << 4)
+#define GDM1_BFRC_P_CPU     (0 << 8)
+#define GDM1_UFRC_P_CPU     (0 << 12)
+
 #define AC_BASE		    RALINK_FRAME_ENGINE_BASE + 0x1000
 #define METER_BASE	    RALINK_FRAME_ENGINE_BASE + 0x1200
-
 #define FE_GDMA1_FWD_CFG    RALINK_FRAME_ENGINE_BASE + 0x600
 #endif // CONFIG_RALINK_MT7621 //
 
@@ -390,7 +410,10 @@ enum FoeCpuReason {
 	HIT_BIND_FORCE_TO_CPU = 0x16,	/* FOE Hit bind & force to CPU */
 	HIT_BIND_WITH_OPTION_HEADER = 0x17, /* Hit bind and remove tunnel IP header, but inner IP has option/next header */
 	HIT_BIND_EXCEED_MTU = 0x1C,	/* Hit bind and exceed MTU */
-#if defined (CONFIG_RALINK_MT7621)
+#if defined (CONFIG_ARCH_MT7623)
+	HIT_BIND_PACKET_SAMPLING = 0x1B,	/*  PS packet */
+#endif
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 	HIT_BIND_MULTICAST_TO_CPU = 0x18,	/*  Switch clone multicast packet to CPU */
 	HIT_BIND_MULTICAST_TO_GMAC_CPU = 0x19,	/*  Switch clone multicast packet to GMAC1 & CPU */
 	HIT_PRE_BIND = 0x1A			/*  Pre-bind */
@@ -472,7 +495,7 @@ enum FoeCpuReason {
 #endif
 
 /* PPE_GLO_CFG, Offset=0x200 */
-#if defined (CONFIG_RALINK_MT7621)
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 #define DFL_TTL0_DRP		(1)	/* 1:Drop, 0: Alert CPU */
 #else
 #define DFL_TTL0_DRP		(0)	/* 1:Drop, 0: Alert CPU */
@@ -649,6 +672,8 @@ enum FoeCpuReason {
  */
 /* packet in a time stamp unit */
 #define DFL_FOE_BNDR		CONFIG_RA_HW_NAT_BINDING_THRESHOLD
+#define DFL_PBND_RD_LMT		CONFIG_RA_HW_NAT_PBND_RD_LMT
+#define DFL_PBND_RD_PRD		CONFIG_RA_HW_NAT_PBND_RD_PRD
 
 /* 
  * PPE_FOE_LMT 
@@ -688,6 +713,8 @@ enum FoeCpuReason {
 #define DFL_FOE_HASH_MODE	2
 #elif defined (CONFIG_RA_HW_NAT_HASH3)
 #define DFL_FOE_HASH_MODE	3
+#elif defined (CONFIG_RA_HW_NAT_HASH_DBG)
+#define DFL_FOE_HASH_MODE	0 // don't care
 #endif
 
 #define HASH_SEED		0x12345678

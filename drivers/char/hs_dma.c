@@ -27,7 +27,7 @@ static unsigned long hsdma_tx_cpu_idx=0;
 //static unsigned long hsdma_rx_cpu_owner_idx0 =0; //for chain mode
 static unsigned long updateCRX =0;
 static unsigned long TransCountLength;
-int (*HSdmaDoneIntCallback[NUM_HSDMA_RX_DESC])(uint32_t ,uint32_t); 
+int (*HSdmaDoneIntCallback[ADDRESS_VLAUE])(uint32_t ,uint32_t); 
 
 struct HSdmaReqEntry HSDMA_Entry;
 EXPORT_SYMBOL(HSDMA_Entry);
@@ -55,7 +55,7 @@ int HS_DmaMem2MemScatterGather(
 	unsigned int hsdma_rx_gather=0;
 	unsigned long flags;
 	HSDMA_Entry.DoneIntCallback = DoneIntCallback;
-	spin_lock_irqsave(&(HSDMA_Entry.page_lock), flags);
+	//spin_lock_irqsave(&(HSDMA_Entry.page_lock_mem), flags);
 	while(i<DescNum){
 		hsdma_tx_scatter = (hsdma_tx_cpu_owner_idx0 + i) % NUM_HSDMA_TX_DESC;
 		
@@ -151,12 +151,13 @@ int HS_DmaMem2MemScatterGather(
 	if(HSDMA_Entry.DoneIntCallback==NULL) {
     //printk("hsdma_rx_calc_idx0 = %d\n",hsdma_rx_calc_idx0 ); 
 		while(HSDMA_Entry.HSDMA_rx_ring0[hsdma_rx_calc_idx0].hsdma_rxd_info2.DDONE_bit ==0);
+		
+		
 	}
-	spin_unlock_irqrestore(&(HSDMA_Entry.page_lock), flags);
+	//spin_unlock_irqrestore(&(HSDMA_Entry.page_lock_mem), flags);
 	return 0;
 }
-
-
+	struct timeval begin, end;
 int HS_DmaMem2Mem( 
 	uint32_t Src, 
 	uint32_t Dst, 
@@ -167,9 +168,11 @@ int HS_DmaMem2Mem(
 	unsigned long flags;
 	spin_lock_irqsave(&(HSDMA_Entry.page_lock), flags);
 	HSDMA_Entry.DoneIntCallback = DoneIntCallback;
+  hsdma_tx_cpu_owner_idx0 = sysRegRead(HSDMA_TX_CTX_IDX0);
+  //while(HSDMA_Entry.HSDMA_tx_ring0[hsdma_tx_cpu_owner_idx0].hsdma_txd_info2.DDONE_bit  ==0);
+ 	//while(HSDMA_Entry.HSDMA_rx_ring0[hsdma_rx_dma_owner_idx0].hsdma_rxd_info2.DDONE_bit ==1);
+  
 	hsdma_rx_dma_owner_idx0 = (hsdma_rx_calc_idx0 + 1) % NUM_HSDMA_RX_DESC;
-	
-	
 	HSDMA_Entry.HSDMA_tx_ring0[hsdma_tx_cpu_owner_idx0].hsdma_txd_info1.SDP0 = (Src & 0xFFFFFFFF);
 	HSDMA_Entry.HSDMA_rx_ring0[hsdma_rx_dma_owner_idx0].hsdma_rxd_info1.PDP0 = (Dst & 0xFFFFFFFF);
   
@@ -178,33 +181,40 @@ int HS_DmaMem2Mem(
   
 	HSDMA_Entry.HSDMA_tx_ring0[hsdma_tx_cpu_owner_idx0].hsdma_txd_info2.LS0_bit = 1;
 	HSDMA_Entry.HSDMA_tx_ring0[hsdma_tx_cpu_owner_idx0].hsdma_txd_info2.DDONE_bit = 0;
+	HSDMA_Entry.HSDMA_rx_ring0[hsdma_rx_dma_owner_idx0].hsdma_rxd_info2.DDONE_bit = 0;
 
 	hsdma_tx_cpu_idx = hsdma_tx_cpu_owner_idx0;
 	hsdma_tx_cpu_owner_idx0 = (hsdma_tx_cpu_owner_idx0+1) % NUM_HSDMA_TX_DESC;
 	hsdma_rx_calc_idx0 = (hsdma_rx_calc_idx0 + 1) % NUM_HSDMA_RX_DESC;
 
 
-
-
-
-	if(HSDMA_Entry.DoneIntCallback!=NULL) {
-	   HSdmaDoneIntCallback[hsdma_rx_dma_owner_idx0] = HSDMA_Entry.DoneIntCallback;
-	}
-  
-
 	sysRegWrite(HSDMA_TX_CTX_IDX0, cpu_to_le32((u32)hsdma_tx_cpu_owner_idx0));//tx start to move, 1->2->255->0->1
-  
+  	if(HSDMA_Entry.DoneIntCallback!=NULL) {
+	   HSdmaDoneIntCallback[hsdma_rx_dma_owner_idx0%ADDRESS_VLAUE] = HSDMA_Entry.DoneIntCallback;
+	}
+	
 	if(HSDMA_Entry.DoneIntCallback==NULL) {
  
 	while(HSDMA_Entry.HSDMA_rx_ring0[hsdma_rx_calc_idx0].hsdma_rxd_info2.DDONE_bit ==0);
+	
+	sysRegWrite(HSDMA_RX_CALC_IDX0, cpu_to_le32((u32)hsdma_rx_calc_idx0)); //update RX CPU IDX
+	sysRegWrite(HSDMA_INT_STATUS, HSDMA_FE_INT_ALL);  //Write one clear INT_status	
 	spin_unlock_irqrestore(&(HSDMA_Entry.page_lock), flags);
-
 
 	}	
   
 
 	return 0;
 }
+/*
+int HS_DmaMem2MemScatterGather( 
+	uint32_t Src0,
+	uint32_t Dst0,
+	uint32_t TransCount,
+	uint16_t DescNum,
+	uint16_t LastDescLSO0,
+	uint16_t LastDescLSO1,
+*/
 int HS_DmaMem2MemGenUse( 
 	uint32_t Src0,
 	uint32_t Dst0,
@@ -221,6 +231,7 @@ int HS_DmaMem2MemGenUse(
 	DesNum =(TransCount/(16000*2));                                            //TX need descriptor
 	
 	if (TransCount >16000 && TransCount <32000){
+		
 		return HS_DmaMem2MemScatterGather(Src0, Dst0, TransCount, 1 ,0 , 1, DoneIntCallback);
 	}
 	
@@ -239,7 +250,7 @@ int HS_DmaMem2MemGenUse(
 	printk("something error\n");
 	return -1;
 }
-
+  unsigned long value;
 irqreturn_t HSdmaIrqHandler(
 	int irq, 
 	void *irqaction
@@ -247,18 +258,23 @@ irqreturn_t HSdmaIrqHandler(
 {
 	unsigned long flags;
 	int i;
-
 	spin_lock_irqsave(&(HSDMA_Entry.page_lock), flags);
-if(HSdmaDoneIntCallback[updateCRX]!= NULL) 
+
+if(HSdmaDoneIntCallback[updateCRX%ADDRESS_VLAUE]!= NULL) 
 {	
+	sysRegWrite(HSDMA_INT_STATUS, HSDMA_FE_INT_ALL);  //Write one clear INT_status	
 	for (i=0;i<NUM_HSDMA_RX_DESC;i++){
 		if (HSDMA_Entry.HSDMA_rx_ring0[i].hsdma_rxd_info2.DDONE_bit == 1) { 
-			  updateCRX = i;
+			  updateCRX = i; 
+
+			  HSDMA_Entry.HSDMA_rx_ring0[updateCRX].hsdma_rxd_info2.DDONE_bit = 0; // RX_Done_bit=1->0
 			  TransCountLength=HSDMA_Entry.HSDMA_rx_ring0[updateCRX].hsdma_rxd_info2.PLEN0;
-				HSdmaDoneIntCallback[updateCRX](TransCountLength, updateCRX); 
+			  sysRegWrite(HSDMA_RX_CALC_IDX0, updateCRX); //update RX CPU IDX
+				HSdmaDoneIntCallback[updateCRX%ADDRESS_VLAUE](TransCountLength, (updateCRX%ADDRESS_VLAUE)); 
 		}
 	}
 }	
+else{
 	for (i=0;i<NUM_HSDMA_RX_DESC;i++){
 		if (HSDMA_Entry.HSDMA_rx_ring0[i].hsdma_rxd_info2.DDONE_bit == 1) { 
 			  updateCRX = i; 
@@ -267,13 +283,19 @@ if(HSdmaDoneIntCallback[updateCRX]!= NULL)
 	}
 	sysRegWrite(HSDMA_RX_CALC_IDX0, cpu_to_le32((u32)updateCRX)); //update RX CPU IDX
 	sysRegWrite(HSDMA_INT_STATUS, HSDMA_FE_INT_ALL);  //Write one clear INT_status	
+}
+
+
+	
+	
+	
 	spin_unlock_irqrestore(&(HSDMA_Entry.page_lock), flags);
 	return IRQ_HANDLED;	
 }
 void set_HSDMA_glo_cfg(void)
 {
 	int HSDMA_glo_cfg=0;
-	HSDMA_glo_cfg = (HSDMA_TX_WB_DDONE | HSDMA_RX_DMA_EN | HSDMA_TX_DMA_EN | HSDMA_BT_SIZE_32DWORDS | HSDMA_MUTI_ISSUE);
+	HSDMA_glo_cfg = (HSDMA_TX_WB_DDONE | HSDMA_RX_DMA_EN | HSDMA_TX_DMA_EN | HSDMA_BT_SIZE_16DWORDS | HSDMA_MUTI_ISSUE);
 	sysRegWrite(HSDMA_GLO_CFG, HSDMA_glo_cfg);
 }
 
@@ -326,7 +348,8 @@ static int HSDMA_init(void)
 	regVal=sysRegRead(HSDMA_GLO_CFG);
 	/* Tell the adapter where the TX/RX rings are located. */
 	//TX0
-	sysRegWrite(HSDMA_TX_BASE_PTR0, phys_to_bus((u32) HSDMA_Entry.phy_hsdma_tx_ring0));
+	//sysRegWrite(HSDMA_TX_BASE_PTR0, phys_to_bus((u32) HSDMA_Entry.phy_hsdma_tx_ring0));
+	sysRegWrite(HSDMA_TX_BASE_PTR0, HSDMA_Entry.phy_hsdma_tx_ring0);
 	sysRegWrite(HSDMA_TX_MAX_CNT0, cpu_to_le32((u32) NUM_HSDMA_TX_DESC));
 	sysRegWrite(HSDMA_TX_CTX_IDX0, 0);
 	hsdma_tx_cpu_owner_idx0 = 0;
@@ -336,7 +359,8 @@ static int HSDMA_init(void)
 
 	    
 	//RX0
-	sysRegWrite(HSDMA_RX_BASE_PTR0, phys_to_bus((u32) HSDMA_Entry.phy_hsdma_rx_ring0));
+	//sysRegWrite(HSDMA_RX_BASE_PTR0, phys_to_bus((u32) HSDMA_Entry.phy_hsdma_rx_ring0));
+	sysRegWrite(HSDMA_RX_BASE_PTR0, HSDMA_Entry.phy_hsdma_rx_ring0);
 	sysRegWrite(HSDMA_RX_MAX_CNT0,  cpu_to_le32((u32) NUM_HSDMA_RX_DESC));
 	sysRegWrite(HSDMA_RX_CALC_IDX0, cpu_to_le32((u32) (NUM_HSDMA_RX_DESC - 1)));
 	hsdma_rx_calc_idx0 = hsdma_rx_dma_owner_idx0 =  sysRegRead(HSDMA_RX_CALC_IDX0);
@@ -356,14 +380,16 @@ static int RalinkHSdmaInit(void)
 	printk("Enable Ralink HS_DMA Controller Module \n");
 
 	Ret = request_irq(SURFBOARDINT_HSGDMA, HSdmaIrqHandler, \
-	    IRQF_DISABLED, "HS_DMA", NULL);
+	    IRQF_TRIGGER_LOW, "HS_DMA", NULL);
 
 	if(Ret){
 		printk("IRQ %d is not free.\n", SURFBOARDINT_DMA);
 	return 1;
 	}
+	spin_lock_init(&(HSDMA_Entry.page_lock));
+	spin_lock_init(&(HSDMA_Entry.page_lock_mem));
 	sysRegWrite(HSDMA_INT_MASK, reg_int_mask  & ~(HSDMA_FE_INT_TX));  // disable int TX DONE
-	sysRegWrite(HSDMA_INT_MASK, reg_int_mask  | (HSDMA_FE_INT_RX) );  // enable int RX DONE
+	sysRegWrite(HSDMA_INT_MASK, reg_int_mask  & ~(HSDMA_FE_INT_RX));  // disable int RX DONE
 		
 	spin_lock_init(&(HSDMA_Entry.page_lock));
 	printk("reg_int_mask=%lu, INT_MASK= %x \n", reg_int_mask, sysRegRead(HSDMA_INT_MASK));

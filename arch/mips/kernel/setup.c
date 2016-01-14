@@ -646,7 +646,6 @@ static void __init arch_mem_init(char **cmdline_p)
 	}
 
 	bootmem_init();
-
 #ifdef CONFIG_PROC_VMCORE
 	if (setup_elfcorehdr && setup_elfcorehdr_size) {
 		printk(KERN_INFO "kdump reserved memory at %lx-%lx\n",

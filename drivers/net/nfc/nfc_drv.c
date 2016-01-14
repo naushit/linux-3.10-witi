@@ -9,7 +9,7 @@
 #include <linux/types.h>
 #include <linux/cdev.h>
 #include <linux/version.h>
-
+#include <linux/uaccess.h>
 // ---------------------------------------------------------------------------
 // define
 // ---------------------------------------------------------------------------
@@ -100,6 +100,11 @@ static int pin_mapping[MTK_NFC_GPIO_MAX_NUM] =
 	6, // MTK_NFC_GPIO_SYSRST_B
 	12, // MTK_NFC_GPIO_INT
 	10  // MTK_NFC_GPIO_IRQ
+#elif CONFIG_ARCH_MT8590
+	9, // MTK_NFC_GPIO_EN_B
+	6, // MTK_NFC_GPIO_SYSRST_B
+	12, // MTK_NFC_GPIO_INT
+	10  // MTK_NFC_GPIO_IRQ	
 #elif defined(CONFIG_RALINK_RT3883)
 	13, // MTK_NFC_GPIO_EN_B
 	11, // MTK_NFC_GPIO_SYSRST_B
@@ -234,7 +239,7 @@ static int mt6605_dev_read(struct file *filp, char __user *buf, size_t count, lo
 #endif    
 
     i2c_read_MT6605(nfc_dev_buf, count);
-    copy_to_user(buf, nfc_dev_buf, count);
+copy_to_user(buf, nfc_dev_buf, count);
     
 #if 0 // debug info
     printk("\n\nread length : %d\n", count);
@@ -265,7 +270,7 @@ static int mt6605_dev_write(struct file *filp, const char __user *buf, size_t co
 		printk("\n\n\n");
 #endif       
 		
-    copy_from_user(nfc_dev_buf, buf, count);
+copy_from_user(nfc_dev_buf, buf, count);
     i2c_write_MT6605(nfc_dev_buf, count);    
     
     return count;

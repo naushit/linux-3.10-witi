@@ -30,6 +30,10 @@
 # Makefile for the Mediatek NFC driver
 #
 
-obj-$(CONFIG_MT6605_NFC) += nfc_drv.o
+#obj-$(CONFIG_MT6605_NFC) += nfc_drv.o
 
-nfc-objs := nfc_drv.o
+#nfc-objs := nfc_drv.o
+#include $(srctree)/drivers/misc/mediatek/Makefile.custom
+#ccflags-$(CONFIG_NFC_MT6605) +=  -DDEBUG
+obj-$(CONFIG_MT6605_NFC)   += mt6605.o
+nfc-objs := mt6605.o

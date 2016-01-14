@@ -38,6 +38,11 @@
 #endif
 #include "../maps/ralink-flash.h"
 
+//#define TWO_SPI_FLASH
+#ifdef TWO_SPI_FLASH
+#include <linux/mtd/concat.h>
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,4)
 #define add_mtd_partitions      mtd_device_register
 #define del_mtd_partitions      mtd_device_unregister
@@ -122,12 +127,36 @@ static struct mtd_partition rt2880_partitions[] = {
                 offset:         MTD_ROOTFS2_PART_OFFSET,
 #endif
 #endif
+#ifdef CONFIG_EXTEND_NVRAM
+        }, {
+                name:           "Config2",
+                size:           MTD_CONFIG_PART_SIZE,
+                offset:         MTD_CONFIG2_PART_OFFSET,
+#endif
         }
 };
 
 #endif /* CONFIG_SUPPORT_OPENWRT */
 //#define TEST_CS1_FLASH
 //#define RD_MODE_DIOR
+
+#ifdef TWO_SPI_FLASH
+static struct mtd_partition rt2880_partitions_2[] = {
+	{
+		name:           "second_all",
+		size:           MTDPART_SIZ_FULL,
+		offset:         0x0,
+	}, {
+		name:           "second_1",
+		size:           0x50000,
+		offset:         0x0,
+	}, {
+		name:           "second_2",
+		size:           0x700000,
+		offset:         MTDPART_OFS_APPEND,
+	}
+};
+#endif
 
 #if defined(RD_MODE_DIOR) || defined(RD_MODE_DOR)
 #define RD_MODE_DUAL
@@ -335,9 +364,14 @@ static int spic_write(const u8 *cmd, size_t n_cmd, const u8 *txbuf, size_t n_tx)
 	return spic_transfer(cmd, n_cmd, (u8 *)txbuf, n_tx, SPIC_WRITE_BYTES);
 }
 #endif // USER_MODE //
-
+#if defined (CONFIG_RALINK_MT7621) && (defined (CONFIG_FB_MEDIATEK_TRULY) || defined(CONFIG_FB_MEDIATEK_ILITEK))
+spinlock_t  flash_lock;
+#endif
 void spic_init(void)
 {
+#if defined (CONFIG_RALINK_MT7621) && (defined (CONFIG_FB_MEDIATEK_TRULY) || defined(CONFIG_FB_MEDIATEK_ILITEK))
+	spin_lock_init(&flash_lock);
+#endif
 #if defined USER_MODE || defined COMMAND_MODE
 
 	// use normal(SPI) mode instead of GPIO mode
@@ -379,36 +413,45 @@ struct chip_info {
 
 static struct chip_info chips_data [] = {
 	/* REVISIT: fill in JEDEC ids, for parts that have them */
-	{ "AT25DF321",		0x1f, 0x47000000, 64 * 1024, 64,  0 },
-	{ "AT26DF161",		0x1f, 0x46000000, 64 * 1024, 32,  0 },
-	{ "FL016AIF",		0x01, 0x02140000, 64 * 1024, 32,  0 },
-	{ "FL064AIF",		0x01, 0x02160000, 64 * 1024, 128, 0 },
-	{ "MX25L1605D",		0xc2, 0x2015c220, 64 * 1024, 32,  0 },
-	{ "MX25L3205D",		0xc2, 0x2016c220, 64 * 1024, 64,  0 },
-	{ "MX25L6405D",		0xc2, 0x2017c220, 64 * 1024, 128, 0 },
-	{ "MX25L12805D",	0xc2, 0x2018c220, 64 * 1024, 256, 0 },
-	{ "MX25L25635E",	0xc2, 0x2019c220, 64 * 1024, 512, 1 },
+	{ "AT25DF321",          0x1f, 0x47000000, 64 * 1024, 64,  0 },
+	{ "AT26DF161",          0x1f, 0x46000000, 64 * 1024, 32,  0 },
+	{ "FL016AIF",           0x01, 0x02140000, 64 * 1024, 32,  0 },
+	{ "FL064AIF",           0x01, 0x02160000, 64 * 1024, 128, 0 },
+	{ "MX25L1605D",         0xc2, 0x2015c220, 64 * 1024, 32,  0 },//MX25L1606E
+	{ "MX25L3205D",         0xc2, 0x2016c220, 64 * 1024, 64,  0 },//MX25L3233F
+	{ "MX25L6405D",         0xc2, 0x2017c220, 64 * 1024, 128, 0 },//MX25L6433F
+	{ "MX25L12805D",        0xc2, 0x2018c220, 64 * 1024, 256, 0 },//MX25L12835F
+	{ "MX25L25635E",        0xc2, 0x2019c220, 64 * 1024, 512, 1 },//MX25L25635F
+	{ "MX25L51245G",        0xc2, 0x201ac220, 64 * 1024, 1024, 1 },
+	{ "S25FL256S",          0x01, 0x02194D01, 64 * 1024, 512, 1 },
+	{ "S25FL128P",          0x01, 0x20180301, 64 * 1024, 256, 0 },
+	{ "S25FL129P",          0x01, 0x20184D01, 64 * 1024, 256, 0 },
 	{ "S25FL164K",          0x01, 0x40170140, 64 * 1024, 128, 0 },
-        { "S25FL132K",          0x01, 0x40160140, 64 * 1024, 64, 0 },
-        { "F25L64QA",           0x8c, 0x41170000, 64 * 1024, 128, 0 }, //ESMT
-        { "F25L32QA",           0x8c, 0x41168c41, 64 * 1024, 64,  0 }, //ESMT
-	{ "S25FL256S",		0x01, 0x02194D01, 64 * 1024, 512, 1 },
-	{ "S25FL128P",		0x01, 0x20180301, 64 * 1024, 256, 0 },
-	{ "S25FL129P",		0x01, 0x20184D01, 64 * 1024, 256, 0 },
-	{ "S25FL032P",		0x01, 0x02154D00, 64 * 1024, 64,  0 },
-	{ "S25FL064P",		0x01, 0x02164D00, 64 * 1024, 128, 0 },
-	{ "EN25F16",		0x1c, 0x31151c31, 64 * 1024, 32,  0 },
-	{ "EN25F32",		0x1c, 0x31161c31, 64 * 1024, 64,  0 },
-	{ "EN25Q32",		0x1c, 0x30161c30, 64 * 1024, 64,  0 }, //EN25Q32B
-	{ "EN25F64",		0x1c, 0x20171c20, 64 * 1024, 128, 0 }, //EN25P64
-	{ "EN25Q64",		0x1c, 0x30171c30, 64 * 1024, 128, 0 },
-	{ "W25Q32BV",		0xef, 0x30160000, 64 * 1024, 64,  0 },
-	{ "W25Q32BV",		0xef, 0x40160000, 64 * 1024, 64,  0 },
-	{ "W25Q64BV",		0xef, 0x40170000, 64 * 1024, 128, 0 }, //S25FL064K
-	{ "W25Q128BV",          0xef, 0x40180000, 64 * 1024, 256, 0 },
+	{ "S25FL132K",          0x01, 0x40160140, 64 * 1024, 64,  0 },
+	{ "S25FL032P",          0x01, 0x02154D00, 64 * 1024, 64,  0 },
+	{ "S25FL064P",          0x01, 0x02164D00, 64 * 1024, 128, 0 },
+	{ "S25FL116K",          0x01, 0x40150140, 64 * 1024, 32,  0 },
+	{ "F25L64QA",           0x8c, 0x41170000, 64 * 1024, 128, 0 }, //ESMT
+	{ "F25L32QA",           0x8c, 0x41168c41, 64 * 1024, 64,  0 }, //ESMT
+	{ "EN25F16",            0x1c, 0x31151c31, 64 * 1024, 32,  0 },
+	{ "EN25Q32B",           0x1c, 0x30161c30, 64 * 1024, 64,  0 },
+	{ "EN25F32",            0x1c, 0x31161c31, 64 * 1024, 64,  0 },
+	{ "EN25F64",            0x1c, 0x20171c20, 64 * 1024, 128, 0 },  // EN25P64
+	{ "EN25Q64",            0x1c, 0x30171c30, 64 * 1024, 128, 0 },
+	{ "W25Q32BV",           0xef, 0x40160000, 64 * 1024, 64,  0 },//W25Q32FV
+	{ "W25X32VS",           0xef, 0x30160000, 64 * 1024, 64,  0 },
+	{ "W25Q64BV",           0xef, 0x40170000, 64 * 1024, 128, 0 }, //S25FL064K //W25Q64FV
+	{ "W25Q128BV",          0xef, 0x40180000, 64 * 1024, 256, 0 },//W25Q128FV
+	{ "W25Q256FV",          0xef, 0x40190000, 64 * 1024, 512, 1 },
+	{ "N25Q032A13ESE40F",   0x20, 0xba161000, 64 * 1024, 64,  0 },
+	{ "N25Q064A13ESE40F",   0x20, 0xba171000, 64 * 1024, 128, 0 },
+	{ "N25Q128A13ESE40F",   0x20, 0xba181000, 64 * 1024, 256, 0 },
+	{ "N25Q256A",       	0x20, 0xba191000, 64 * 1024, 512, 1 },
+	{ "MT25QL512AB",    	0x20, 0xba201044, 64 * 1024, 1024, 1 },
 	{ "GD25Q32B",           0xC8, 0x40160000, 64 * 1024, 64,  0 },
-	{ "GD25Q64B",           0xC8, 0x40170000, 64 * 1024, 128,  0 },
-	{ "GD25Q128C",          0xC8, 0x40180000, 64 * 1024, 256,  0 },
+	{ "GD25Q64B",           0xC8, 0x40170000, 64 * 1024, 128, 0 },
+	{ "GD25Q128C",          0xC8, 0x40180000, 64 * 1024, 256, 0 },
+
 };
 
 
@@ -416,22 +459,78 @@ struct flash_info {
 	struct semaphore	lock;
 	struct mtd_info		mtd;
 	struct chip_info	*chip;
+#ifdef TWO_SPI_FLASH
+	struct chip_info        *chips[2];
+	struct mtd_info         mtd2;
+#endif
+			 
 	u8			command[5];
 };
 
+#ifdef TWO_SPI_FLASH
+struct mtd_info *merged_mtd;
+static struct mtd_info *ralink_mtd[2];
+#endif
 struct flash_info *flash = NULL;
 
+const struct semaphore* FLASH_LOCK_GET(void){
+	return &(flash->lock);
+}
 
 #ifdef BBU_MODE
 #ifdef MORE_BUF_MODE
-static int bbu_mb_spic_trans(const u8 code, const u32 addr, u8 *buf, const size_t n_tx, const size_t n_rx, int flag)
+int bbu_mb_spic_trans(const u8 code, const u32 addr, u8 *buf, const size_t n_tx, const size_t n_rx, int flag, int lcd)
 {
+	if (lcd == LCD_USE){	
+
+#if(1)
+		u32 DATA0, DATA1, DATA2, DATA3, DATA4, DATA5, DATA6, DATA7, DATA8;
+		sysRegWrite(SPI_REG_MASTER, 0x20038884);// CS1, morebuffer mode
+
+		DATA0 = (*(buf + 2) << 24) | (*(buf + 1) << 16 ) | (*(buf + 0)  << 8 ) | (*(buf + 5));
+		RT2880_REG(SPI_REG_OPCODE) = DATA0;
+
+		ra_or(SPI_REG_MOREBUF, (32 << 24));
+		DATA1 = (*(buf + 7)) << (3*8) | (*(buf + 8)) << (2*8) | (*(buf + 3)) << (1*8) | (*(buf + 4));
+		RT2880_REG(SPI_REG_DATA(0)) = DATA1;
+		DATA2 = (*(buf + 9)) << (3*8) | (*(buf + 10)) << (2*8) | (*(buf + 11)) << (1*8) | (*(buf + 6));
+		RT2880_REG(SPI_REG_DATA(1)) = DATA2;
+		DATA3 = (*(buf + 17)) << (3*8) | (*(buf + 12)) << (2*8) | (*(buf + 13)) << (1*8) | (*(buf + 14));
+		RT2880_REG(SPI_REG_DATA(2)) = DATA3;
+		DATA4 = (*(buf + 19)) << (3*8) | (*(buf + 20)) << (2*8) | (*(buf + 15)) << (1*8) | (*(buf + 16));
+		RT2880_REG(SPI_REG_DATA(3)) = DATA4;
+		DATA5 = (*(buf + 21)) << (3*8) | (*(buf + 22)) << (2*8) | (*(buf + 23)) << (1*8) | (*(buf + 18));
+		RT2880_REG(SPI_REG_DATA(4)) = DATA5;
+		DATA6 = (*(buf + 29)) << (3*8) | (*(buf + 24)) << (2*8) | (*(buf + 25)) << (1*8) | (*(buf + 26));
+		RT2880_REG(SPI_REG_DATA(5)) = DATA6;
+		DATA7 = (*(buf + 31)) << (3*8) | (*(buf + 32)) << (2*8) | (*(buf + 27)) << (1*8) | (*(buf + 28));
+		RT2880_REG(SPI_REG_DATA(6)) = DATA7;
+		DATA8 = (*(buf + 33)) << (3*8) | (*(buf + 34)) << (2*8) | (*(buf + 35)) << (1*8) | (*(buf + 30));
+		RT2880_REG(SPI_REG_DATA(7)) = DATA8;
+		ra_or(SPI_REG_MOREBUF, 256);
+  
+		ra_or(SPI_REG_CTL, SPI_CTL_START);	
+		bbu_spic_busy_wait();
+		ra_and(SPI_REG_MASTER, ~(1 << 2));		
+		return 0;
+#endif
+		}else if (lcd == FLASH_USE){
+#if defined (CONFIG_RALINK_MT7621) && (defined (CONFIG_FB_MEDIATEK_TRULY) || defined(CONFIG_FB_MEDIATEK_ILITEK))			
+	spin_lock(&flash_lock);
+#endif	
 	u32 reg;
 	int i, q, r;
 	int rc = -1;
-
+#if defined (CONFIG_RALINK_MT7621) && (defined (CONFIG_FB_MEDIATEK_TRULY) || defined(CONFIG_FB_MEDIATEK_ILITEK))
+	bbu_spic_busy_wait();
+  sysRegWrite(SPI_REG_MASTER, 0x58880);
+#endif	  
+	 
 	if (flag != SPIC_READ_BYTES && flag != SPIC_WRITE_BYTES) {
 		printk("we currently support more-byte-mode for reading and writing data only\n");
+#if defined (CONFIG_RALINK_MT7621) && (defined (CONFIG_FB_MEDIATEK_TRULY) || defined(CONFIG_FB_MEDIATEK_ILITEK))
+		spin_unlock(&flash_lock);
+#endif
 		return -1;
 	}
 
@@ -491,6 +590,9 @@ static int bbu_mb_spic_trans(const u8 code, const u32 addr, u8 *buf, const size_
 	if (flag & SPIC_READ_BYTES) {
 		if (buf == NULL) {
 			printk("%s: read null buf\n", __func__);
+#if defined (CONFIG_RALINK_MT7621) && (defined (CONFIG_FB_MEDIATEK_TRULY) || defined(CONFIG_FB_MEDIATEK_ILITEK))
+			spin_unlock(&flash_lock);
+#endif
 			return -1;
 		}
 		for (i = 0; i < n_rx; i++) {
@@ -505,16 +607,69 @@ static int bbu_mb_spic_trans(const u8 code, const u32 addr, u8 *buf, const size_
 RET_MB_TRANS:
 	/* step #. disable more byte mode */
 	ra_and(SPI_REG_MASTER, ~(1 << 2));
+#if defined (CONFIG_RALINK_MT7621) && (defined (CONFIG_FB_MEDIATEK_TRULY) || defined(CONFIG_FB_MEDIATEK_ILITEK))
+	spin_unlock(&flash_lock);
+#endif
 	return rc;
+}
+
 }
 #endif // MORE_BUF_MODE //
 
-static int bbu_spic_trans(const u8 code, const u32 addr, u8 *buf, const size_t n_tx, const size_t n_rx, int flag)
+int bbu_spic_trans(const u8 code, const u32 addr, u8 *buf, const size_t n_tx, const size_t n_rx, int flag, int lcd)
 {
-	u32 reg;
+		
+		if (lcd == LCD_USE){
+		
+   sysRegWrite(SPI_REG_MASTER, 0x20038880); // CS1, not morebuffer mode
+   
+		sysRegWrite(SPI_REG_OPCODE, addr);
+		ra_and(SPI_REG_CTL, ~SPI_CTL_TX_RX_CNT_MASK);
+		ra_or(SPI_REG_CTL, 1);
+	/* step 4. kick */
+		ra_or(SPI_REG_CTL, SPI_CTL_START);
+	/* step 5. wait spi_master_busy */
+		bbu_spic_busy_wait();
+		
+		return 0;
+	}
+#if defined (CONFIG_RALINK_MT7621) && defined (CONFIG_FB_MEDIATEK_TRULY)
+	else if(lcd ==TRULY_USE){
+	 u32 tmp1, tmp2, tmp3, DATA0;
+	      sysRegWrite(SPI_REG_MASTER, 0x20038880);     
+	/* step 0. enable more byte mode */
+
+	tmp1 = (*(buf + 2) & 0xFC) | ((*(buf + 1) & 0xC0) >> 6);
+	tmp2 = ((*(buf + 1) & 0x3C) << 2) | ( (*(buf + 0) & 0xF0) >> 4);
+	tmp3 =  (*(buf + 0) & 0x0F) << 4;
+	
+	
+	DATA0 = (0x72) | (tmp1 << 24) | (tmp2 << 16) | (tmp3<<8);
+  bbu_spic_busy_wait();
+ 	RT2880_REG(SPI_REG_OPCODE) = DATA0; 
+	
+	/* step 3. set mosi_byte_cnt */
+
+	ra_and(SPI_REG_CTL, ~SPI_CTL_TX_RX_CNT_MASK);
+
+	ra_or(SPI_REG_CTL, 4);
+ 
+	/* step 4. kick */
+	ra_or(SPI_REG_CTL, SPI_CTL_START);		
+	return 0;
+	}
+#endif	
+	else if (lcd == FLASH_USE){
+#if defined (CONFIG_RALINK_MT7621) && defined (CONFIG_FB_MEDIATEK_TRULY)
+		spin_lock(&flash_lock);
+#endif			
+	  u32 reg;
+		
 
 	bbu_spic_busy_wait();
-
+#if defined (CONFIG_RALINK_MT7621) && defined (CONFIG_FB_MEDIATEK_TRULY) && defined(CONFIG_FB_MEDIATEK_ILITEK)
+	sysRegWrite(SPI_REG_MASTER, 0x58880);
+#endif
 	/* step 1. set opcode & address */
 	if (flash && flash->chip->addr4b) {
 		ra_and(SPI_REG_CTL, ~SPI_CTL_ADDREXT_MASK);
@@ -531,6 +686,9 @@ static int bbu_spic_trans(const u8 code, const u32 addr, u8 *buf, const size_t n
 	if (flag & SPIC_WRITE_BYTES) {
 		if (buf == NULL) {
 			printk("%s: write null buf\n", __func__);
+#if defined (CONFIG_RALINK_MT7621) && defined (CONFIG_FB_MEDIATEK_TRULY)
+			spin_unlock(&flash_lock);
+#endif
 			return -1;
 		}
 		ra_outl(SPI_REG_DATA0, 0);
@@ -575,6 +733,9 @@ static int bbu_spic_trans(const u8 code, const u32 addr, u8 *buf, const size_t n
 			break;
 		default:
 			printk("%s: fixme, write of length %d\n", __func__, n_tx);
+#if defined (CONFIG_RALINK_MT7621) && defined (CONFIG_FB_MEDIATEK_TRULY)
+			spin_unlock(&flash_lock);
+#endif
 			return -1;
 		}
 	}
@@ -594,13 +755,19 @@ static int bbu_spic_trans(const u8 code, const u32 addr, u8 *buf, const size_t n
 
 	/* step 5. wait spi_master_busy */
 	bbu_spic_busy_wait();
-	if (flag & SPIC_WRITE_BYTES)
+	if (flag & SPIC_WRITE_BYTES){
+#if defined (CONFIG_RALINK_MT7621) && defined (CONFIG_FB_MEDIATEK_TRULY)
+		spin_unlock(&flash_lock);
+#endif
 		return 0;
-
+  }
 	/* step 6. read DI/DO data #0 */
 	if (flag & SPIC_READ_BYTES) {
 		if (buf == NULL) {
 			printk("%s: read null buf\n", __func__);
+#if defined (CONFIG_RALINK_MT7621) && defined (CONFIG_FB_MEDIATEK_TRULY)
+			spin_unlock(&flash_lock);
+#endif
 			return -1;
 		}
 		reg = ra_inl(SPI_REG_DATA0);
@@ -616,12 +783,17 @@ static int bbu_spic_trans(const u8 code, const u32 addr, u8 *buf, const size_t n
 			break;
 		default:
 			printk("%s: fixme, read of length %d\n", __func__, n_rx);
+#if defined (CONFIG_RALINK_MT7621) && defined (CONFIG_FB_MEDIATEK_TRULY)
+			spin_unlock(&flash_lock);
+#endif
 			return -1;
 		}
 	}
-
-
+#if defined (CONFIG_RALINK_MT7621) && defined (CONFIG_FB_MEDIATEK_TRULY)
+  spin_unlock(&flash_lock);
+#endif
 	return 0;
+}
 }
 #endif // BBU_MODE //
 
@@ -639,7 +811,7 @@ static int raspi_read_devid(u8 *rxbuf, int n_rx)
 #ifdef USER_MODE
 	retval = spic_read(&code, 1, rxbuf, n_rx);
 #elif defined BBU_MODE
-	retval = bbu_spic_trans(code, 0, rxbuf, 1, 3, SPIC_READ_BYTES);
+	retval = bbu_spic_trans(code, 0, rxbuf, 1, 3, SPIC_READ_BYTES, FLASH_USE);
 	if (!retval)
 		retval = n_rx;
 #endif
@@ -672,7 +844,7 @@ static int raspi_read_rg(u8 code, u8 *val)
 #ifdef USER_MODE
 	retval = spic_read(&code, 1, val, 1);
 #elif defined BBU_MODE
-	retval = bbu_spic_trans(code, 0, val, 1, 1, SPIC_READ_BYTES);
+	retval = bbu_spic_trans(code, 0, val, 1, 1, SPIC_READ_BYTES, FLASH_USE);
 	return retval;
 #endif
 	if (retval != 1) {
@@ -697,7 +869,7 @@ static int raspi_write_rg(u8 code, u8 *val)
 	{
 		// put the value to be written in address register, so it will be transfered
 		u32 address = (*val) << 24;
-		retval = bbu_spic_trans(code, address, val, 2, 0, SPIC_WRITE_BYTES);
+		retval = bbu_spic_trans(code, address, val, 2, 0, SPIC_WRITE_BYTES, FLASH_USE);
 	}
 	return retval;
 #endif
@@ -722,7 +894,7 @@ static int raspi_write_rg16(u8 code, u8 *val)
 		// put the value to be written in address register, so it will be transfered
 		u32 address = (*val) << 24;
 		address |= (*(val+1)) << 16;
-		retval = bbu_spic_trans(code, address, val, 3, 0, SPIC_WRITE_BYTES);
+		retval = bbu_spic_trans(code, address, val, 3, 0, SPIC_WRITE_BYTES, FLASH_USE);
 	}
 	return retval;
 #endif
@@ -735,6 +907,7 @@ static int raspi_write_rg16(u8 code, u8 *val)
 }
 #endif
 
+static inline int raspi_write_enable(void);
 static int raspi_4byte_mode(int enable)
 {
 	ssize_t retval;
@@ -807,8 +980,16 @@ static int raspi_4byte_mode(int enable)
 			ra_and(SPI_REG_Q_CTL, ~(0x3 << 8));
 			ra_or(SPI_REG_Q_CTL, 0x2 << 8);
 		}
-		retval = bbu_spic_trans(code, 0, NULL, 1, 0, 0);
+		retval = bbu_spic_trans(code, 0, NULL, 1, 0, 0, FLASH_USE);
 #endif
+		// for Winbond's W25Q256FV, need to clear extend address register
+		if ((!enable) && (flash->chip->id == 0xef))
+		{
+			code = 0x0;
+			raspi_write_enable();
+			raspi_write_rg(0xc5, &code);
+		}
+
 		if (retval != 0) {
 			printk("%s: ret: %x\n", __func__, retval);
 			return -1;
@@ -830,7 +1011,7 @@ static inline int raspi_write_enable(void)
 #ifdef USER_MODE
 	return spic_write(&code, 1, NULL, 0);
 #elif defined BBU_MODE
-	return bbu_spic_trans(code, 0, NULL, 1, 0, 0);
+	return bbu_spic_trans(code, 0, NULL, 1, 0, 0, FLASH_USE);
 #endif
 }
 
@@ -955,7 +1136,7 @@ static int raspi_erase_sector(u32 offset)
 	if (flash->chip->addr4b)
 		raspi_4byte_mode(1);
 	raspi_write_enable();
-	bbu_spic_trans(STM_OP_SECTOR_ERASE, offset, NULL, 4, 0, 0);
+	bbu_spic_trans(STM_OP_SECTOR_ERASE, offset, NULL, 4, 0, 0, FLASH_USE);
 	//raspi_wait_ready(950);
 	raspi_wait_sleep_ready(950);
 	if (flash->chip->addr4b)
@@ -1082,12 +1263,23 @@ static int ramtd_erase(struct mtd_info *mtd, struct erase_info *instr)
 	len = instr->len;
 
   	down(&flash->lock);
-
+#ifdef TWO_SPI_FLASH
+	if (mtd == ralink_mtd[1])
+ 	{
+		ra_or(SPI_REG_MASTER, (1 << 29));
+	}
+#endif
 	/* now erase those sectors */
 	while (len > 0) {
 		if (raspi_erase_sector(addr)) {
 			instr->state = MTD_ERASE_FAILED;
+#ifdef TWO_SPI_FLASH
+			ra_and(SPI_REG_MASTER, ~(1 << 29));
+#endif
 			up(&flash->lock);
+#if defined (CONFIG_RALINK_MT7621) && (defined (CONFIG_FB_MEDIATEK_TRULY) || defined(CONFIG_FB_MEDIATEK_ILITEK))
+			spin_unlock(&flash_lock);
+#endif
 			return -EIO;
 		}
 
@@ -1095,6 +1287,9 @@ static int ramtd_erase(struct mtd_info *mtd, struct erase_info *instr)
 		len -= mtd->erasesize;
 	}
 
+#ifdef TWO_SPI_FLASH
+	ra_and(SPI_REG_MASTER, ~(1 << 29));
+#endif
   	up(&flash->lock);
 
 	instr->state = MTD_ERASE_DONE;
@@ -1133,6 +1328,12 @@ static int ramtd_read(struct mtd_info *mtd, loff_t from, size_t len,
 		up(&flash->lock);
 		return -EIO;
 	}
+#ifdef TWO_SPI_FLASH
+	if (mtd == ralink_mtd[1])
+	{
+		ra_or(SPI_REG_MASTER, (1 << 29));
+	}
+#endif
 
 #ifdef USER_MODE
 
@@ -1244,18 +1445,18 @@ static int ramtd_read(struct mtd_info *mtd, loff_t from, size_t len,
 #endif
 		if (len - rdlen <= more) {
 #ifdef MORE_BUF_MODE
-			rc = bbu_mb_spic_trans(STM_OP_RD_DATA, from, (buf+rdlen), 0, (len-rdlen), SPIC_READ_BYTES);
+			rc = bbu_mb_spic_trans(STM_OP_RD_DATA, from, (buf+rdlen), 0, (len-rdlen), SPIC_READ_BYTES, FLASH_USE);
 #else
 #if defined(RD_MODE_DOR)
-			rc = bbu_spic_trans(OPCODE_DOR, from, (buf+rdlen), 5, (len-rdlen), SPIC_READ_BYTES);
+			rc = bbu_spic_trans(OPCODE_DOR, from, (buf+rdlen), 5, (len-rdlen), SPIC_READ_BYTES, FLASH_USE);
 #elif defined(RD_MODE_DIOR)
-			rc = bbu_spic_trans(OPCODE_DIOR, from, (buf+rdlen), 5, (len-rdlen), SPIC_READ_BYTES);
+			rc = bbu_spic_trans(OPCODE_DIOR, from, (buf+rdlen), 5, (len-rdlen), SPIC_READ_BYTES, FLASH_USE);
 #elif defined(RD_MODE_QOR)
-			rc = bbu_spic_trans(OPCODE_QOR, from, (buf+rdlen), 5, (len-rdlen), SPIC_READ_BYTES);
+			rc = bbu_spic_trans(OPCODE_QOR, from, (buf+rdlen), 5, (len-rdlen), SPIC_READ_BYTES, FLASH_USE);
 #elif defined(RD_MODE_QIOR)
-			rc = bbu_spic_trans(OPCODE_QIOR, from, (buf+rdlen), 7, (len-rdlen), SPIC_READ_BYTES);
+			rc = bbu_spic_trans(OPCODE_QIOR, from, (buf+rdlen), 7, (len-rdlen), SPIC_READ_BYTES, FLASH_USE);
 #else
-			rc = bbu_spic_trans(STM_OP_RD_DATA, from, (buf+rdlen), 4, (len-rdlen), SPIC_READ_BYTES);
+			rc = bbu_spic_trans(STM_OP_RD_DATA, from, (buf+rdlen), 4, (len-rdlen), SPIC_READ_BYTES, FLASH_USE);
 #endif
 #endif
 			if (rc != 0) {
@@ -1266,18 +1467,18 @@ static int ramtd_read(struct mtd_info *mtd, loff_t from, size_t len,
 		}
 		else {
 #ifdef MORE_BUF_MODE
-			rc = bbu_mb_spic_trans(STM_OP_RD_DATA, from, (buf+rdlen), 0, more, SPIC_READ_BYTES);
+			rc = bbu_mb_spic_trans(STM_OP_RD_DATA, from, (buf+rdlen), 0, more, SPIC_READ_BYTES, FLASH_USE);
 #else
 #if defined(RD_MODE_DOR)
-			rc = bbu_spic_trans(OPCODE_DOR, from, (buf+rdlen), 5, more, SPIC_READ_BYTES);
+			rc = bbu_spic_trans(OPCODE_DOR, from, (buf+rdlen), 5, more, SPIC_READ_BYTES, FLASH_USE);
 #elif defined(RD_MODE_DIOR)
-			rc = bbu_spic_trans(OPCODE_DIOR, from, (buf+rdlen), 5, more, SPIC_READ_BYTES);
+			rc = bbu_spic_trans(OPCODE_DIOR, from, (buf+rdlen), 5, more, SPIC_READ_BYTES, FLASH_USE);
 #elif defined(RD_MODE_QOR)
-			rc = bbu_spic_trans(OPCODE_QOR, from, (buf+rdlen), 5, more, SPIC_READ_BYTES);
+			rc = bbu_spic_trans(OPCODE_QOR, from, (buf+rdlen), 5, more, SPIC_READ_BYTES, FLASH_USE);
 #elif defined(RD_MODE_QIOR)
-			rc = bbu_spic_trans(OPCODE_QIOR, from, (buf+rdlen), 7, more, SPIC_READ_BYTES);
+			rc = bbu_spic_trans(OPCODE_QIOR, from, (buf+rdlen), 7, more, SPIC_READ_BYTES, FLASH_USE);
 #else
-			rc = bbu_spic_trans(STM_OP_RD_DATA, from, (buf+rdlen), 4, more, SPIC_READ_BYTES);
+			rc = bbu_spic_trans(STM_OP_RD_DATA, from, (buf+rdlen), 4, more, SPIC_READ_BYTES, FLASH_USE);
 #endif
 #endif
 			if (rc != 0) {
@@ -1331,7 +1532,9 @@ static int ramtd_read(struct mtd_info *mtd, loff_t from, size_t len,
 	if (flash->chip->addr4b)
 		raspi_4byte_mode(0);
 #endif
-
+#ifdef TWO_SPI_FLASH
+	ra_and(SPI_REG_MASTER, ~(1 << 29));
+#endif
   	up(&flash->lock);
 
 	if (retlen) 
@@ -1389,7 +1592,12 @@ static int ramtd_write(struct mtd_info *mtd, loff_t to, size_t len,
 		up(&flash->lock);
 		return -1;
 	}
-
+#ifdef TWO_SPI_FLASH
+	if (mtd == ralink_mtd[1])
+	{
+		ra_or(SPI_REG_MASTER, (1 << 29));
+	}
+#endif
 #ifdef USER_MODE
 	/* Set up the opcode in the write buffer. */
 	flash->command[0] = OPCODE_PP;
@@ -1458,17 +1666,17 @@ static int ramtd_write(struct mtd_info *mtd, loff_t to, size_t len,
 #endif
 			if (wrlen <= more) {
 #ifdef MORE_BUF_MODE
-				bbu_mb_spic_trans(STM_OP_PAGE_PGRM, wrto, wrbuf, wrlen, 0, SPIC_WRITE_BYTES);
+				bbu_mb_spic_trans(STM_OP_PAGE_PGRM, wrto, wrbuf, wrlen, 0, SPIC_WRITE_BYTES, FLASH_USE);
 #else
-				bbu_spic_trans(STM_OP_PAGE_PGRM, wrto, wrbuf, wrlen+4, 0, SPIC_WRITE_BYTES);
+				bbu_spic_trans(STM_OP_PAGE_PGRM, wrto, wrbuf, wrlen+4, 0, SPIC_WRITE_BYTES,FLASH_USE);
 #endif
 				wrlen = 0;
 			}
 			else {
 #ifdef MORE_BUF_MODE
-				bbu_mb_spic_trans(STM_OP_PAGE_PGRM, wrto, wrbuf, more, 0, SPIC_WRITE_BYTES);
+				bbu_mb_spic_trans(STM_OP_PAGE_PGRM, wrto, wrbuf, more, 0, SPIC_WRITE_BYTES, FLASH_USE);
 #else
-				bbu_spic_trans(STM_OP_PAGE_PGRM, wrto, wrbuf, more+4, 0, SPIC_WRITE_BYTES);
+				bbu_spic_trans(STM_OP_PAGE_PGRM, wrto, wrbuf, more+4, 0, SPIC_WRITE_BYTES,FLASH_USE);
 #endif
 				wrto += more;
 				wrlen -= more;
@@ -1486,6 +1694,9 @@ static int ramtd_write(struct mtd_info *mtd, loff_t to, size_t len,
 			if (retlen)
 				*retlen += rc;
 			if (rc < page_size) {
+#ifdef TWO_SPI_FLASH
+				ra_and(SPI_REG_MASTER, ~(1 << 29));
+#endif
 				up(&flash->lock);
 				printk("%s: rc:%x return:%x page_size:%x \n", 
 				       __func__, rc, rc, page_size);
@@ -1506,11 +1717,52 @@ static int ramtd_write(struct mtd_info *mtd, loff_t to, size_t len,
 
 	if (flash->chip->addr4b)
 		raspi_4byte_mode(0);
-
+#ifdef TWO_SPI_FLASH
+	ra_and(SPI_REG_MASTER, ~(1 << 29));
+#endif
 	up(&flash->lock);
 
 	return 0;
 }
+
+#ifdef TWO_SPI_FLASH
+static int ramtd_erase_2(struct mtd_info *mtd, struct erase_info *instr)
+{
+	int ret;
+	ra_or(SPI_REG_MASTER, (1 << 29));
+	flash->chip = flash->chips[1];
+	ret = ramtd_erase(mtd, instr);
+	flash->chip = flash->chips[0];
+	ra_and(SPI_REG_MASTER, ~(1 << 29));
+	return ret;
+}
+
+static int ramtd_read_2(struct mtd_info *mtd, loff_t from, size_t len,
+		        size_t *retlen, u_char *buf)
+{
+	int ret;
+	ra_or(SPI_REG_MASTER, (1 << 29));
+	flash->chip = flash->chips[1];
+	ret = ramtd_read(mtd, from, len, retlen, buf);
+	flash->chip = flash->chips[0];
+	ra_and(SPI_REG_MASTER, ~(1 << 29));
+	return ret;
+}
+
+static int ramtd_write_2(struct mtd_info *mtd, loff_t to, size_t len,
+		        size_t *retlen, const u_char *buf)
+{
+	int ret;
+	ra_or(SPI_REG_MASTER, (1 << 29));
+	flash->chip = flash->chips[1];
+	ret = ramtd_write(mtd, to, len, retlen, buf);
+	flash->chip = flash->chips[0];
+	ra_and(SPI_REG_MASTER, ~(1 << 29));
+	return ret;
+}
+#endif
+
+
 
 /*
  * board specific setup should have ensured the SPI clock used here
@@ -1547,7 +1799,7 @@ static struct mtd_info *raspi_probe(struct map_info *map)
 #endif
 
 #ifdef TEST_CS1_FLASH
-        ra_and(RALINK_SYSCTL_BASE + 0x60, ~(1 << 12));
+	ra_and(RALINK_SYSCTL_BASE + 0x60, ~(3 << 4));
         ra_or(SPI_REG_MASTER, (1 << 29));
 #endif
 
@@ -1613,9 +1865,67 @@ static struct mtd_info *raspi_probe(struct map_info *map)
 				ntohl(hdr.ih_ksz));
 	}
 #endif
+
+#ifdef TWO_SPI_FLASH
+	flash->chips[0] = chip;
+
+	ra_and(RALINK_SYSCTL_BASE + 0x60, ~(3 << 4));
+	ra_or(SPI_REG_MASTER, (1 << 29));
+	chip = chip_prob();
+	flash->chips[1] = chip;
+	ra_and(SPI_REG_MASTER, ~(1 << 29));
+	flash->mtd2.name = "raspi2";
+
+	flash->mtd2.type = MTD_NORFLASH;
+	flash->mtd2.writesize = 1;
+	flash->mtd2.flags = MTD_CAP_NORFLASH;
+	flash->mtd2.size = chip->sector_size * chip->n_sectors;
+	flash->mtd2.erasesize = chip->sector_size;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,4)
+	flash->mtd2._erase = ramtd_erase_2;
+	flash->mtd2._read = ramtd_read_2;
+	flash->mtd2._write = ramtd_write_2;
+	flash->mtd2._lock = ramtd_lock;
+	flash->mtd2._unlock = ramtd_unlock;
+#else
+	flash->mtd2.erase = ramtd_erase_2;
+	flash->mtd2.read = ramtd_read_2;
+	flash->mtd2.write = ramtd_write_2;
+	flash->mtd2.lock = ramtd_lock;
+	flash->mtd2.unlock = ramtd_unlock;
+#endif
+	printk("%s(%02x %04x) (%d Kbytes)\n",
+		chip->name, chip->id, chip->jedec_id, (int)(flash->mtd2.size / 1024));
+
+	printk("mtd .name = %s, .size = 0x%.8x (%uM) "
+		".erasesize = 0x%.8x (%uK) .numeraseregions = %d\n",
+				flash->mtd2.name,
+				(unsigned int)flash->mtd2.size, (unsigned int)(flash->mtd2.size / (1024*1024)),
+				(unsigned int)flash->mtd2.erasesize, (unsigned int)(flash->mtd2.erasesize / 1024),
+				(int)flash->mtd2.numeraseregions);
+
+	if (flash->mtd2.numeraseregions)
+		for (i = 0; i < flash->mtd2.numeraseregions; i++)
+			printk("mtd.eraseregions[%d] = { .offset = 0x%.8x, "
+					        ".erasesize = 0x%.8x (%uK), "
+						".numblocks = %d }\n",
+						i, (unsigned int)flash->mtd2.eraseregions[i].offset,
+						(unsigned int)flash->mtd2.eraseregions[i].erasesize,
+						(unsigned int)(flash->mtd2.eraseregions[i].erasesize / 1024),
+						(int)flash->mtd2.eraseregions[i].numblocks);
+	ralink_mtd[0] = &flash->mtd;
+	ralink_mtd[1] = &flash->mtd2;
+	merged_mtd = mtd_concat_create(ralink_mtd, 2, "Ralink Merged Flash");
+	add_mtd_partitions(&flash->mtd, rt2880_partitions, ARRAY_SIZE(rt2880_partitions));
+	add_mtd_partitions(&flash->mtd2, rt2880_partitions_2, ARRAY_SIZE(rt2880_partitions_2));
+	return merged_mtd;
+#else
+
 	add_mtd_partitions(&flash->mtd, rt2880_partitions, ARRAY_SIZE(rt2880_partitions));
 
 	return &flash->mtd;
+#endif
 }
 
 
@@ -1663,6 +1973,9 @@ static void __exit raspi_exit(void)
 module_init(raspi_init);
 module_exit(raspi_exit);
 
+EXPORT_SYMBOL(bbu_mb_spic_trans);
+EXPORT_SYMBOL(bbu_spic_trans);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Steven Liu");
 MODULE_DESCRIPTION("MTD SPI driver for Ralink flash chips");
+EXPORT_SYMBOL(FLASH_LOCK_GET);

@@ -54,59 +54,59 @@ choice
 
 	config FIRST_IF_RT2860
 	bool "RT2860 for rt2860v2 wifi driver"
-	select RTMP_MAC
+	select WIFI_RTMP_MAC
 	select RALINK_RT2860
 	
 	config FIRST_IF_MT7620
 	bool "MT7620 for rlt_wifi wifi driver"
-	select RTMP_MAC
+	select WIFI_RTMP_MAC
 	select RALINK_RT6352
 
 	config FIRST_IF_MT7628
 	bool "MT7628 for rlt_wifi wifi driver"
 	depends on RALINK_MT7628
-	select MT_MAC
+	select WIFI_MT_MAC
 
 	config FIRST_IF_RT3092
 	bool "RT3092"
 	depends on RALINK_MT7621
-	select RTMP_MAC
+	select WIFI_RTMP_MAC
 	select RALINK_RT3092
     
 	config FIRST_IF_RT5392
 	bool "RT5392"
 	depends on RALINK_MT7621
-	select RTMP_MAC
+	select WIFI_RTMP_MAC
 	select RALINK_RT5392
     	
 	config FIRST_IF_RT5592
 	bool "RT5592"
 	depends on RALINK_MT7621
-	select RTMP_MAC
+	select WIFI_RTMP_MAC
 	select RALINK_RT5592
 	
 	config FIRST_IF_RT3593
 	bool "RT3593"
 	depends on RALINK_MT7621
-	select RTMP_MAC
+	select WIFI_RTMP_MAC
 	select RALINK_RT3593
     
 	config FIRST_IF_MT7610E
 	bool "MT7610E"
 	depends on RALINK_MT7621
-	select RLT_MAC
+	select WIFI_RLT_MAC
 	select RALINK_MT7610E
     
 	config FIRST_IF_MT7612E
 	bool "MT7612E"
 	depends on RALINK_MT7621
-	select RLT_MAC
+	select WIFI_RLT_MAC
 	select RALINK_MT7612E
 
 	config FIRST_IF_MT7602E
 	bool "MT7602E"
 	depends on RALINK_MT7621
-	select RLT_MAC
+	select WIFI_RLT_MAC
 	select RALINK_MT7602E
 
 	config FIRST_IF_MT7603E
@@ -114,6 +114,20 @@ choice
 	depends on RALINK_MT7621
 	select MT_MAC
 	select RALINK_MT7603E
+
+#	config FIRST_IF_MT7637E
+#	bool "MT7637E"
+#	depends on RALINK_MT7621
+#	select WIFI_MT_MAC
+#	select MT_MAC
+#	select RALINK_MT7637E
+
+	config FIRST_IF_MT7615E
+	bool "MT7615E"
+	depends on RALINK_MT7621
+	select WIFI_MT_MAC
+	select MT_MAC
+	select CHIP_MT7615E
 endchoice
 
 choice
@@ -123,73 +137,84 @@ choice
 
 	config SECOND_IF_RT3092
 	bool "RT3092"
-	select RTMP_MAC
+	select WIFI_RTMP_MAC
 	select RALINK_RT3092
     
 	config SECOND_IF_RT5392
 	bool "RT5392"
-	select RTMP_MAC
+	select WIFI_RTMP_MAC
 	select RALINK_RT5392
     	
 	config SECOND_IF_RT5592
 	bool "RT5592"
-	select RTMP_MAC
+	select WIFI_RTMP_MAC
 	select RALINK_RT5592
 	
 	config SECOND_IF_RT3593
 	bool "RT3593"
-	select RTMP_MAC
+	select WIFI_RTMP_MAC
 	select RALINK_RT3593
     
 	config SECOND_IF_RT3572
 	bool "RT3572"
-	select RTMP_MAC
+	select WIFI_RTMP_MAC
 	select RALINK_RT3572
 
 	config SECOND_IF_RT5572
 	bool "RT5572"
-	select RTMP_MAC
+	select WIFI_RTMP_MAC
 	select RALINK_RT5572
     
 	config SECOND_IF_MT7620
 	bool "MT7620"
-	select RTMP_MAC
+	select WIFI_RTMP_MAC
 	select RALINK_RT6352
     
 	config SECOND_IF_MT7610U
 	bool "MT7610U"
-	select RLT_MAC
+	select WIFI_RLT_MAC
 	select RALINK_MT7610U
     
 	config SECOND_IF_MT7610E
 	bool "MT7610E"
-	select RLT_MAC
+	select WIFI_RLT_MAC
 	select RALINK_MT7610E
     
 	config SECOND_IF_RT8592
 	bool "RT85592"
-	select RLT_MAC
+	select WIFI_RLT_MAC
 	select RALINK_RT8592
 	
 	config SECOND_IF_MT7612U
 	bool "MT7612U"
-	select RLT_MAC
+	select WIFI_RLT_MAC
 	select RALINK_MT7612U
     
 	config SECOND_IF_MT7612E
 	bool "MT7612E"
-	select RLT_MAC
+	select WIFI_RLT_MAC
 	select RALINK_MT7612E
 
 	config SECOND_IF_MT7602E
 	bool "MT7602E"
-	select RLT_MAC
+	select WIFI_RLT_MAC
 	select RALINK_MT7602E
 
 	config SECOND_IF_MT7603E
 	bool "MT7603E"
 	select MT_MAC
 	select RALINK_MT7603E
+
+#	config SECOND_IF_MT7637E
+#	bool "MT7637E"
+#	select WIFI_MT_MAC
+#	select MT_MAC
+#	select RALINK_MT7637E
+
+	config SECOND_IF_MT7615E
+	bool "MT7615E"
+	select WIFI_MT_MAC
+	select CHIP_MT7615E
 endchoice
 
 config  RT_FIRST_CARD
@@ -203,9 +228,11 @@ config  RT_FIRST_CARD
         default 5592 if FIRST_IF_RT5592
         default 3593 if FIRST_IF_RT3593
         default 7610 if FIRST_IF_MT7610E
-	default 7612e if FIRST_IF_MT7612E
-	default 7602e if FIRST_IF_MT7602E
-	default 7603e if FIRST_IF_MT7603E
+	default 7612 if FIRST_IF_MT7612E
+	default 7602 if FIRST_IF_MT7602E
+	default 7603 if FIRST_IF_MT7603E
+#	default 7637 if FIRST_IF_MT7637E
+	default 7615 if FIRST_IF_MT7615E
         
 config  RT_SECOND_CARD
         int
@@ -218,10 +245,14 @@ config  RT_SECOND_CARD
         default 8592 if SECOND_IF_RT8592
         default 3572 if SECOND_IF_RT3572
         default 5572 if SECOND_IF_RT5572
-	default 7612e if SECOND_IF_MT7612E
-	default 7612u if SECOND_IF_MT7612U
-	default 7602e if SECOND_IF_MT7602E
-	default 7603e if SECOND_IF_MT7603E
+        default 7610 if SECOND_IF_MT7610E
+        default 7610 if SECOND_IF_MT7610U
+	default 7612 if SECOND_IF_MT7612E
+	default 7612 if SECOND_IF_MT7612U
+	default 7602 if SECOND_IF_MT7602E
+	default 7603 if SECOND_IF_MT7603E
+#	default 7637 if SECOND_IF_MT7637E
+	default 7615 if SECOND_IF_MT7615E
         
 config  RT_FIRST_IF_RF_OFFSET
         hex
@@ -329,11 +360,10 @@ config  RA_NAT_NONE
 bool "None"
 config  RA_NAT_HW
 bool "Hardware"
-depends on !RALINK_RT5350
+depends on !RALINK_RT5350 && !RALINK_MT7628
 endchoice
 
 source "net/nat/hw_nat/Kconfig"
 
 
 endmenu
-

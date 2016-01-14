@@ -20,7 +20,9 @@
 #include <linux/mtd/map.h>
 #include <linux/mtd/concat.h>
 #include <linux/mtd/partitions.h>
+#if defined (CONFIG_MIPS)
 #include <asm/addrspace.h>
+#endif
 #include "ralink-flash.h"
 #include <asm/rt2880/rt_mmap.h>
 
@@ -118,10 +120,14 @@ static struct mtd_partition rt2880_partitions[] = {
                 size:           MTD_ROOTFS2_PART_SIZE,
                 offset:         MTD_ROOTFS2_PART_OFFSET,
 #endif
-        }
-#else
-	}
 #endif 
+#ifdef CONFIG_EXTEND_NVRAM
+        }, {
+                name:           "Config2",
+                size:           MTD_CONFIG_PART_SIZE,
+                offset:         MTD_CONFIG2_PART_OFFSET,
+#endif
+        }
 };
 #else //not 32M flash
 static struct mtd_partition rt2880_partitions[] = {

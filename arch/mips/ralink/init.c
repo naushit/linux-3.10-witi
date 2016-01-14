@@ -57,6 +57,7 @@
 #endif
 
 extern unsigned long surfboard_sysclk;
+extern void show_sdk_patch_info(void);
 //extern unsigned long mips_machgroup;
 u32 mips_cpu_feq;
 
@@ -598,15 +599,15 @@ void prom_init_sysclk(void)
 	(*((volatile u32 *)(RALINK_RBUS_MATRIXCTL_BASE + 0x14))) = (reg | 0xC0000000);
 #elif defined (CONFIG_RALINK_MT7628)
 #ifdef CONFIG_USB_SUPPORT
-	        reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x440)));
-		reg &= ~(0xf0f);
-		reg |= 0x606;
-		(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x440))) = reg;
+	reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x440)));
+	reg &= ~(0xf0f);
+	reg |= 0x606;
+	(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x440))) = reg;
 #else
-	        reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x440)));
-		reg &= ~(0xf0f);
-		reg |= 0xa0a;
-		(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x440))) = reg;
+	reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x440)));
+	reg &= ~(0xf0f);
+	reg |= 0xa0a;
+	(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x440))) = reg;
 #endif /* CONFIG_USB_SUPPORT */
 	reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x444)));
 	(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x444))) = (reg | 0x80000000);
@@ -614,11 +615,10 @@ void prom_init_sysclk(void)
 #endif /* CONFIG_RALINK_CPUSLEEP */
 
 #if defined (CONFIG_RALINK_MT7628)
-	/* disable request preemption */
 	reg = (*((volatile u32 *)(RALINK_RBUS_MATRIXCTL_BASE + 0x0)));
 	(*((volatile u32 *)(RALINK_RBUS_MATRIXCTL_BASE + 0x0))) = (reg & ~(0x4000000));
 
-	/* MIPS reset apply to Andes */
+	// MIPS reset apply to Andes
 	reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x38)));
 	(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x38))) = (reg | 0x200);
 #endif
@@ -750,7 +750,6 @@ static void serial_setbrg(unsigned long wBaud)
 #endif
 }
 
-
 int serial_init(unsigned long wBaud)
 {
         serial_setbrg(wBaud);
@@ -817,7 +816,9 @@ __init void prom_init(void)
 	if (!register_vsmp_smp_ops())
 		return;
 #endif
+	show_sdk_patch_info();
 
 #endif // CONFIG_IRQ_GIC //
 }
 
+EXPORT_SYMBOL(mips_cpu_feq);

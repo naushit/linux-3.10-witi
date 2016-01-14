@@ -18,3 +18,8 @@ endif
 ifeq ($(CONFIG_PPE_MCAST),y)
 hw_nat-objs += mcast_tbl.o
 endif
+
+ifeq ($(CONFIG_RAETH_GMAC2),y)
+	EXTRA_CFLAGS += -DCONFIG_PSEUDO_SUPPORT
+endif
+

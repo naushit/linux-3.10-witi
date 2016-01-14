@@ -22,10 +22,10 @@
 /*
  * DEFINITIONS AND MACROS
  */
-#if defined (CONFIG_ARCH_MT8590)
+#if defined (CONFIG_ARCH_MT7623)
 #include <mach/sync_write.h>
 #define RegRead(phys)		 (*(volatile unsigned int*)(phys))
-#define RegWrite(phys, val)	 mt65xx_reg_sync_writel(phys, val)
+#define RegWrite(phys, val)	 mt65xx_reg_sync_writel(val, phys)
 #else
 #define PHYS_TO_K1(physaddr) KSEG1ADDR(physaddr)
 #define RegRead(phys) (*(volatile uint32_t *)PHYS_TO_K1(phys))

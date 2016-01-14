@@ -1,8 +1,8 @@
 /* ==========================================================================
- * $File: //WIFI_SOC/MP/SDK_4_3_0_0/RT288x_SDK/source/linux-2.6.21.x/drivers/usb/dwc_otg/dwc_otg_hcd.h $
+ * $File: //WIFI_SOC/MP/SDK_5_0_0_0/RT288x_SDK/source/linux-2.6.21.x/drivers/usb/dwc_otg/dwc_otg_hcd.h $
  * $Revision: #1 $
- * $Date: 2014/05/07 $
- * $Change: 98444 $
+ * $Date: 2015/03/04 $
+ * $Change: 121091 $
  *
  * Synopsys HS OTG Linux Software Driver and documentation (hereinafter,
  * "Software") is an Unsupported proprietary work of Synopsys, Inc. unless

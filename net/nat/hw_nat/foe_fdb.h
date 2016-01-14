@@ -133,6 +133,9 @@ struct bf_info_blk1 {
 	uint32_t psn:1;		/* egress packet has PPPoE session */
 #if defined (CONFIG_RALINK_MT7621)
 	uint32_t vpm:2;		/* 0:ethertype remark, 1:0x8100, 2:0x88a8 */
+#elif defined (CONFIG_ARCH_MT7623)
+	uint32_t vpm:1;		/* 0:ethertype remark, 1:0x8100(CR default)*/
+	uint32_t ps:1;		/* packet sampling */
 #else
 	uint32_t dvp:1;		/* inform switch of keeping VPRI */
 	uint32_t drm:1;		/* inform switch of keeping DSCP(IPv4) or TC(IPv6) */
@@ -147,7 +150,7 @@ struct bf_info_blk1 {
 };
 
 struct _info_blk2 {
-#if defined (CONFIG_RALINK_MT7621)
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 	uint32_t qid:4;		/* QID in Qos Port */
 	uint32_t fqos:1;	/* force to PSE QoS port */
 	uint32_t dp:3;		/* force to PSE port x 
@@ -527,6 +530,22 @@ struct FoeEntry {
 	};
 };
 
+
+#if defined (CONFIG_RA_HW_NAT_PACKET_SAMPLING)
+struct PsEntry {
+	uint8_t  en;
+	uint8_t  acl;
+	uint16_t pkt_len;
+	uint16_t pkt_cnt;
+	uint8_t  time_period;
+	uint8_t  resv0;
+	uint32_t resv1;
+	uint16_t hw_pkt_cnt;
+	uint16_t hw_time;
+
+};
+#endif
+
 struct FoePriKey {
 	/* TODO: add new primary key to support dslite, 6rd */
 
@@ -672,6 +691,7 @@ void FoeDumpEntry(uint32_t Index);
 int FoeGetAllEntries(struct hwnat_args *opt);
 int FoeBindEntry(struct hwnat_args *opt);
 int FoeUnBindEntry(struct hwnat_args *opt);
+int FoeDropEntry(struct hwnat_args *opt);
 int FoeDelEntryByNum(uint32_t entry_num);
 void FoeTblClean(void);
 int FoeDumpCacheEntry(void);

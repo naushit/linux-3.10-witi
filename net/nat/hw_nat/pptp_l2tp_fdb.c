@@ -35,8 +35,11 @@ void pptp_l2tp_fdb_flush(u32 addr_hash)
     {
 	struct pptp_l2tp_fdb_entry *f;
 	struct hlist_node *h, *n;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
 	hlist_for_each_entry_safe(f, h, n, &pptp_l2tp_hash[i], hlist) {
-
+#else
+	hlist_for_each_entry_safe(f, n, &pptp_l2tp_hash[i], hlist) {
+#endif
 	    foe_entry = &PpeFoeBase[f->hash_index];
 	    if (foe_entry->bfib1.state != BIND){
 		fdb_delete(f);
@@ -55,7 +58,11 @@ struct pptp_l2tp_fdb_entry *pptp_l2tp_fdb_find(struct hlist_head *head,
     struct hlist_node *h;
     struct pptp_l2tp_fdb_entry *fdb;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
     hlist_for_each_entry_rcu(fdb, h, head, hlist) {
+#else
+    hlist_for_each_entry_rcu(fdb, head, hlist) {
+#endif
 	if (fdb->addr == addr){
 	    if(fdb->src_ip == src_ip  && fdb->protocol == protocol)
 		return fdb;
@@ -159,7 +166,11 @@ int32_t pptp_l2tp_fdb_dump(void)
     printk("pptp_l2tp_fdb_dump ~~~~~~~\n");
     for (i = 0; i < PPTP_L2TP_HASH_SIZE; i++) 
     {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
 	hlist_for_each_entry_rcu(f, h, &pptp_l2tp_hash[i], hlist) 
+#else
+	hlist_for_each_entry_rcu(f, &pptp_l2tp_hash[i], hlist) 
+#endif
 	{
 	    foe_entry = &PpeFoeBase[f->hash_index];
 	    if (foe_entry->bfib1.state != BIND)    

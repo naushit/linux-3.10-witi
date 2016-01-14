@@ -37,12 +37,6 @@
 #define Physical2NonCache(x)            (((int)x) | 0xa0000000)
 #define NonCache2Virtual(x)             (((int)x) & 0xDFFFFFFF)
 
-#if defined (CONFIG_RALINK_MT7621)
-#define MT7621_ASIC_BOARD
-#endif
-
-#define NO_MEMORY_COPY
-//#define DEBUG_INIT_MODE 
 //#define SPDIF_DEBUG_PRN
 #ifdef SPDIF_DEBUG_PRN
 #define MSG(fmt, args...) 		printk("SPDIF: " fmt, ## args)
@@ -59,19 +53,14 @@
 
 /* Configuration enable */
 #define SPDIF_STATISTIC
-//#define NONLINEAR_PCM_DATA
+//#define SPDIF_AC3_DEBUG
+//#define CONFIG_SPDIF_MMAP	
 
-/***************************/
-/* HW feature definiations */
-/***************************/
-/* FIXME */
-#if defined(CONFIG_RALINK_MT7621)
-#define CONFIG_I2S_FRAC_DIV             1
-#define CONFIG_I2S_EXTENDCFG    	1
-#define CONFIG_I2S_IN_CLK               1
+#if defined(CONFIG_SND_ALSA_SPDIF)
+/* Definition for ALSA */
+#define SUBSTREAM_PLAYBACK	0
+#define SUBSTREAM_CAPTURE	1
 #endif
-
-//#define CONFIG_SPDIFS_MMAP           	1
 
 /*******************************************/ 
 /* Register Map, Ref. to MT7621 Data Sheet */
@@ -179,66 +168,16 @@
 /* IEC_APLL_CFG0 bit field */
 #define APLL_SEL			0
 
-#if 0
-/* IEC_APLL_CFG1 bit field */
-#define RG_APLL_DDS_PWDB		26
-#define RG_APLL_DDS_RST_SEL             25
-#define RG_APLL_DDS_PI_PL_ENB           24
-#define RG_APLL_DDS_PREDIV2             23
-#define RG_APLL_DDS_HF_EN               22
-#define RG_APLL_FIFO_START_MAN          21
-#define RG_APLL_PCW_NCPO_CHG            20
-#define RG_APLL_NCPO_EN                 19
-#define RG_APLL_DDS_RSTB                18
-#define RG_APLL_DDSEN                	17
-#define RG_APLL_FMEN                	16
-#define RG_APLL_CKSEL                	15
-#define RG_APLL_VODEN                	14
-#define RG_APLL_BAND                	8
-#define RG_APLL_LOAD_RSTB               7
-#define RG_APLL_AUTOK_LOAD              6
-#define RG_APLL_AUTOK_VCO               5
-#define RG_APLL_ACCEN                	4
-#define RG_APLL_BIR                	0
-
-/* IEC_APLL_CFG3 bit field */
-#define RG_APLL_CLK_PH_INV              31
-#define RG_APLL_DDS_PI_C                28
-#define RG_PLLGP_BIAS_RST               27
-#define RG_PLLGP_BIAS_PWD               26
-#define RG_PLLGP_ABIST_DIV1             25
-#define RG_PLLGP_ABIST_DIV2             24
-#define RG_PLLGP_TEST_EN                23
-#define RG_PLLGP_ABIST_PWD              22
-#define RG_PLLGP_ABIST_DIV              16
-#define RG_PLLGP_MONSEL                	12
-#define RG_PLLGP_SEL_CK                	11
-#define RG_APLL_DDS_DMY                	0
-
-/* IEC_APLL_DEBUG bit field */
-#define AD_RGS_PLLGP_VCOCAL_FAIL	7
-#define AD_RGS_PLLGP_VCOCAL_CPLT	6
-#define AD_RGS_PLLGP_VCO_STATE		0
-#endif
-
 /***********************/
 /* Constant definition */
 /***********************/
-// Set buf size for different data
-//#define PCM_BUF_SIZE_16B           	(1536*2*2)//unit: bytes; set PCM's buff equal to AC3  
-//#define NULL_DATA_BUF_SIZE_16B	(500*2*2)
-//#define AC3_BUF_SIZE_16B		(1536*2*2) //for AC3 --> 1536 samples (frames); 1 frame = 32bit*2 = 64bit = 8 byte
-//#define PAUSE_DATA_BUF_SIZE_16B	(1536*2*2)
-
-#ifdef NO_MEMORY_COPY
 #define MAX_SPDIF_PAGE           	10
-#else
-#define MAX_SPDIF_PAGE           	8
-#endif
 #define PCM_BURST_SAMPLE		1536
 #define NULL_BURST_SAMPLE		500    // FIXME
 #define AC3_BURST_SAMPLE		1536
 #define PAUSE_BURST_SAMPLE		1536
+
+#define SPDIF_MIN_PAGE_SIZE		4096
 
 #define BIT_MODE_16			2
 #define BIT_MODE_24			3
@@ -267,9 +206,9 @@
 #define SPDIF_TX_PCM_ENABLE		4
 #define SPDIF_TX_RAW_ENABLE		5
 #define SPDIF_TX_DISABLE		6
-#define SPDIF_PUT_AUDIO			7	
+#define SPDIF_PCM_PUT_AUDIO		7	
 #define SPDIF_DOWN_SAMPLE		8
-#define SPDIF_PUT_AUDIO_FOR_RAW_DATA	9
+#define SPDIF_RAW_PUT_AUDIO		9
 #define SPDIF_BYTE_SWAP_SET		10
 #define SPDIF_INIT_PARAMETER		11
 #define SPDIF_TX_STOP			12
@@ -399,29 +338,29 @@ typedef struct spdif_config_t
 {
         u32 pos;
         u32 tx_isr_cnt;
-        int bSleep;
-        int bTxDMAEnable;
-        int nTxDMAStopped;
 #ifdef __KERNEL__
         spinlock_t lock;
         wait_queue_head_t spdif_tx_qh;
+#if defined(CONFIG_SND_ALSA_SPDIF)
+	struct snd_pcm_substream *substream[2];
+#endif	
 #endif
         u32 hw_buf;
 	u32 dma_buf;
 	u32 buff_chain_run;
         u32 dma_unmask_status;
 
-        int w_idx;
-
         int tx_w_idx;
         int tx_r_idx;
-        int mmap_index;
+	int mmap_index;
+	int interrupt_cnt;
 
 	int buf_undflow;
 	u32 data_type_tmp;
 	u32 subdata_type_tmp;
 	u32 srate;
 	u32 nb_len;
+	int bTxDMAEnable;
 
 	/* IEC_CTRL configuration */
 	u32 raw_en;
@@ -490,22 +429,17 @@ typedef struct spdif_config_t
 	u32 pause_en;
 
         u8* buf8ptr;
-        char* pMMAPBufPtr[MAX_SPDIF_PAGE*2];
-        char* pMMAPTxBufPtr[MAX_SPDIF_PAGE];
-        char* pMMAPRxBufPtr[MAX_SPDIF_PAGE];
+        //char* pMMAPBufPtr[MAX_SPDIF_PAGE*2];
+	char* pMMAPBufPtr[MAX_SPDIF_PAGE+1];
+        //char* pMMAPTxBufPtr[MAX_SPDIF_PAGE+1];
+        //char* pMMAPRxBufPtr[MAX_SPDIF_PAGE];
 
-#ifdef NO_MEMORY_COPY
 	u8* pPageTxBuf8ptr[MAX_SPDIF_PAGE+1];
-#else
-	u8* pPageTxBuf8Ptr[2];
-#endif
 
-#ifdef NO_MEMORY_COPY
 	u32 txdma_addr_buf[MAX_SPDIF_PAGE+1];
 	int rdone_bit[MAX_SPDIF_PAGE];
 	int page0_start;
-	int page1_start;	
-#endif
+	int page1_start;
 
 }spdif_config_type;
 
@@ -515,13 +449,16 @@ typedef struct spdif_config_t
 /***********************/
 /* Funtion declaration */
 /***********************/
+#if defined(CONFIG_SPDIF_MMAP)
+int spdif_mem_unmap(spdif_config_type* pspdif_config);
+int spdif_mmap_txbuf_alloc(spdif_config_type* pspdif_config);
+int spdif_mmap_txbuf_free(spdif_config_type* pspdif_config);
+#endif
 int spdif_clock_enable(spdif_config_type* pspdif_config);
 int spdif_clock_disable(spdif_config_type* pspdif_config);
-int spdif_buffer_init(spdif_config_type* pspdif_config);
+int spdif_txPagebuf_alloc(spdif_config_type* pspdif_config);
 int spdif_ch_status_init(spdif_config_type* pspdif_config);
-#ifdef NO_MEMORY_COPY
 int spdif_nsadr_set(spdif_config_type* pspdif_config, u32 dma_ch, u32 r_idx);
-#endif
 int spdif_ch_status_config(spdif_config_type* pspdif_config, u32 dma_ch);
 int spdif_ch_cfg_trig(spdif_config_type* pspdif_config, u32 dma_ch);
 int spdif_intr_status_config(spdif_config_type* pspdif_config);
@@ -533,9 +470,53 @@ int spdif_reset_tx_config(spdif_config_type* pspdif_config);
 int spdif_tx_hw_config(spdif_config_type* pspdif_config);
 int spdif_tx_enable(spdif_config_type* pspdif_config);
 int spdif_tx_disable(spdif_config_type* pspdif_config);
+int spdif_txPagebuf_free(spdif_config_type* pspdif_config);
+int spdif_clock_divider_set(spdif_config_type* pspdif_config, unsigned long index);
+int spdif_pcm_bufsize_init(spdif_config_type* pspdif_config);
+int spdif_raw_bufsize_init(spdif_config_type* pspdif_config);
+int spdif_pcm_intr_nsnum_init(spdif_config_type* pspdif_config);
+int spdif_raw_intr_nsnum_init(spdif_config_type* pspdif_config);
+int spdif_pcpd_pack_init(spdif_config_type* pspdif_config);
+int spdif_tx_transf_zero_set(spdif_config_type* pspdif_config, u32 dma_ch);
+int spdif_tx_transf_data_set(spdif_config_type* pspdif_config, u32 dma_ch);
+int spdif_tx_transf_zero_handle(spdif_config_type* pspdif_config);
+int spdif_tx_transf_data_handle(spdif_config_type* pspdif_config);
+int spdif_buffer_underflow_occur(spdif_config_type* pspdif_config);
+int spdif_buffer_underflow_recover(spdif_config_type* pspdif_config);
+int spdif_rdone_bit_handle(spdif_config_type* pspdif_config, u32 dma_ch);
+int spdif_rdone_bit_init(spdif_config_type* pspdif_config);
+int spdif_pcm_put_audio(spdif_config_type* pspdif_config, unsigned long arg);
+int spdif_raw_put_audio(spdif_config_type* pspdif_config, unsigned long arg);
+int spdif_irq_request(void);
+int spdif_irq_free(void);
+void spdif_reset(void);
+void spdif_share_pin_config(void);
+void spdif_tx_clock_config(void);
+void spdif_mute_config(void);
+void spdif_demute_config(void);
+void spdif_nb_len_config(spdif_config_type* pspdif_config, u32 dma_ch);
 
-#if defined(MT7621_ASIC_BOARD)
+#if defined(CONFIG_RALINK_MT7621)
 int spdif_pll_config(unsigned long index);
 #endif
 
+#if defined(SPDIF_AC3_DEBUG)
+void spdif_ac3_header_check(spdif_config_type* pspdif_config);
+#endif
+
+/**********************
+ * SPDIF API for ALSA *
+ **********************/
+#if defined(CONFIG_SND_ALSA_SPDIF)
+char* spdif_tx_dma_alloc(spdif_config_type* pspdif_config);
+int spdif_tx_dma_free(spdif_config_type* pspdif_config);
+int spdif_bufsize_init(spdif_config_type* pspdif_config);
+int spdif_startup(void);
+int spdif_shutdown(void);
+int spdif_tx_idx_update(spdif_config_type* pspdif_config);
+int spdif_tx_dma_ctrl_enable(spdif_config_type* pspdif_config);
+int spdif_tx_dma_ctrl_disable(spdif_config_type* pspdif_config);
+int spdif_irq_init(void);
+int spdif_irq_release(void);
 #endif 
+#endif

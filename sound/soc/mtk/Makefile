@@ -1,12 +1,16 @@
-#
-# Jz4740 Platform Support
-#
-
 KBUILD_CFLAGS += -I$(srctree)
 
-snd-soc-mtk-objs := mtk_audio_i2s.o mtk_audio_device.o mtk_audio_pcm.o
+# MTK APSoC Platform Support
+snd-soc-mt76xx-pcm-objs := mt76xx_pcm.o
+snd-soc-mt76xx-i2s-objs := mt76xx_i2s.o
 
-obj-$(CONFIG_SND_RALINK_SOC) += snd-soc-mtk.o
+obj-$(CONFIG_SND_MT76XX_PCM) += snd-soc-mt76xx-pcm.o
+obj-$(CONFIG_SND_MT76XX_I2S) += snd-soc-mt76xx-i2s.o
+
+# MTK APSoC Machine Support
+snd-soc-mt76xx-machine-objs := mt76xx_machine.o
+
+obj-$(CONFIG_SND_MT76XX_SOC) += snd-soc-mt76xx-machine.o
 
 
 

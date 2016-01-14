@@ -22,6 +22,9 @@
 #define HW_NAT_INVALID_ENTRY		(0x07)
 #define HW_NAT_DEBUG	   		(0x08)
 
+
+#define HW_NAT_DROP_ENTRY		(0x36)
+
 /*HNAT QOS*/
 #if defined (CONFIG_HNAT_V2)
 #define HW_NAT_GET_AC_CNT		(0x09)

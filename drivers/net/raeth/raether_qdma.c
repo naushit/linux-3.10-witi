@@ -24,6 +24,13 @@
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35)
 #include <linux/sched.h>
 #endif
+#if defined (CONFIG_HW_SFQ)
+#include <linux/if_vlan.h>
+#include <net/ipv6.h>
+#include <net/ip.h>
+#include <linux/if_pppox.h>
+#include <linux/ppp_defs.h>
+#endif
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,0)
 #include <asm/rt2880/rt_mmap.h>
@@ -78,7 +85,11 @@ int ra_mtd_read_nm(char *name, loff_t from, size_t len, u_char *buf);
 #if defined (CONFIG_RAETH_NAPI) || defined (CONFIG_RAETH_QOS)
 #undef DELAY_INT
 #else
-#define DELAY_INT	1
+#if defined     (CONFIG_ARCH_MT7623)
+#define DELAY_INT       1
+#else
+#define DELAY_INT       1
+#endif
 #endif
 
 //#define CONFIG_UNH_TEST
@@ -118,14 +129,35 @@ int is_switch_175c = 1;
 
 //skb->mark to queue mapping table
 extern unsigned int M2Q_table[64];
-
+struct QDMA_txdesc *free_head = NULL;
+extern unsigned int lan_wan_separate;
+#if defined (CONFIG_HW_SFQ)
+extern unsigned int web_sfq_enable;
+#define HwSfqQUp 3
+#define HwSfqQDl 1
+#endif
+int dbg =0;//debug used
+#if defined (CONFIG_HW_SFQ)
+struct SFQ_table *sfq0;
+struct SFQ_table *sfq1;
+struct SFQ_table *sfq2;
+struct SFQ_table *sfq3;
+#endif
 
 #define KSEG1                   0xa0000000
+#if defined (CONFIG_MIPS)
 #define PHYS_TO_VIRT(x)         ((void *)((x) | KSEG1))
 #define VIRT_TO_PHYS(x)         ((unsigned long)(x) & ~KSEG1)
+#else
+#define PHYS_TO_VIRT(x)         phys_to_virt(x)
+#define VIRT_TO_PHYS(x)         virt_to_phys(x)
+#endif
 
 extern void set_fe_dma_glo_cfg(void);
 
+#if defined (CONFIG_HW_SFQ)
+ParseResult		SfqParseResult;
+#endif
 
 /**
  *
@@ -141,8 +173,9 @@ static unsigned int GET_TXD_OFFSET(struct QDMA_txdesc **cpu_ptr)
 	struct net_device *dev = dev_raether;
 	END_DEVICE *ei_local = netdev_priv(dev);
 	int ctx_offset;
-  	ctx_offset = (((((u32)*cpu_ptr) <<8)>>8) - ((((u32)ei_local->txd_pool)<<8)>>8))/ sizeof(struct QDMA_txdesc);
-	ctx_offset = (*cpu_ptr - ei_local->txd_pool);
+  	//ctx_offset = (((((u32)*cpu_ptr) <<8)>>8) - ((((u32)ei_local->txd_pool)<<8)>>8))/ sizeof(struct QDMA_txdesc);
+	//ctx_offset = (*cpu_ptr - ei_local->txd_pool);
+	ctx_offset = (((((u32)*cpu_ptr) <<8)>>8) - ((((u32)ei_local->phy_txd_pool)<<8)>>8))/ sizeof(struct QDMA_txdesc);
 
   	return ctx_offset;
 } 
@@ -193,7 +226,8 @@ static int get_free_txd(struct QDMA_txdesc **free_txd)
 		tmp_idx = ei_local->free_txd_head;
 		ei_local->free_txd_head = ei_local->txd_pool_info[tmp_idx];
 		ei_local->free_txd_num -= 1;
-		*free_txd = &ei_local->txd_pool[tmp_idx];
+		//*free_txd = &ei_local->txd_pool[tmp_idx];
+		*free_txd = ei_local->phy_txd_pool + (sizeof(struct QDMA_txdesc) * tmp_idx);
 		return tmp_idx;
 	}else
 		return NUM_TX_DESC;	
@@ -266,8 +300,10 @@ bool qdma_tx_desc_alloc(void)
 	}
 	
 	//add null TXD for transmit
-	ei_local->tx_dma_ptr = VIRT_TO_PHYS(free_txd);
-	ei_local->tx_cpu_ptr = VIRT_TO_PHYS(free_txd);
+	//ei_local->tx_dma_ptr = VIRT_TO_PHYS(free_txd);
+	//ei_local->tx_cpu_ptr = VIRT_TO_PHYS(free_txd);
+	ei_local->tx_dma_ptr = free_txd;
+	ei_local->tx_cpu_ptr = free_txd;
 	sysRegWrite(QTX_CTX_PTR, ei_local->tx_cpu_ptr);
 	sysRegWrite(QTX_DTX_PTR, ei_local->tx_dma_ptr);
 	
@@ -279,30 +315,101 @@ bool qdma_tx_desc_alloc(void)
 		return 0;
 	}
 	// add null TXD for release
-	sysRegWrite(QTX_CRX_PTR, VIRT_TO_PHYS(free_txd));
-	sysRegWrite(QTX_DRX_PTR, VIRT_TO_PHYS(free_txd));
-	
+	//sysRegWrite(QTX_CRX_PTR, VIRT_TO_PHYS(free_txd));
+	//sysRegWrite(QTX_DRX_PTR, VIRT_TO_PHYS(free_txd));
+	sysRegWrite(QTX_CRX_PTR, free_txd);
+	sysRegWrite(QTX_DRX_PTR, free_txd);
 	printk("free_txd: %p, ei_local->cpu_ptr: %08X\n", free_txd, ei_local->tx_cpu_ptr);
 	
 	printk(" POOL  HEAD_PTR | DMA_PTR | CPU_PTR \n");
 	printk("----------------+---------+--------\n");
-#if 1
-	printk("     0x%p 0x%08X 0x%08X\n",ei_local->txd_pool,
-			ei_local->tx_dma_ptr, ei_local->tx_cpu_ptr);
-#endif
+	printk("     0x%p 0x%08X 0x%08X\n",ei_local->txd_pool, ei_local->tx_dma_ptr, ei_local->tx_cpu_ptr);
 	return 1;
 }
+#if defined (CONFIG_HW_SFQ)
+bool sfq_init(void)
+{
+	unsigned int regVal;
+	
+	unsigned int sfq_phy0;
+	unsigned int sfq_phy1;
+	unsigned int sfq_phy2;
+	unsigned int sfq_phy3;	
+  struct SFQ_table *sfq0;
+	struct SFQ_table *sfq1;
+	struct SFQ_table *sfq2;
+	struct SFQ_table *sfq3;
+	int i = 0;
+	regVal = sysRegRead(VQTX_GLO);
+	regVal = regVal | VQTX_MIB_EN |(1<<16) ;
+	sysRegWrite(VQTX_GLO, regVal);// Virtual table extends to 32bytes
+	regVal = sysRegRead(VQTX_GLO);
+	sysRegWrite(VQTX_NUM, (VQTX_NUM_0) | (VQTX_NUM_1) | (VQTX_NUM_2) | (VQTX_NUM_3));
+	sysRegWrite(VQTX_HASH_CFG, 0xF002710); //10 s change hash algorithm
+  sysRegWrite(VQTX_VLD_CFG, 0xc840);
+	sysRegWrite(VQTX_HASH_SD, 0x0D);
+	sysRegWrite(QDMA_FC_THRES, 0x9b9b4444);
+	sysRegWrite(QDMA_HRED1, 0);
+	sysRegWrite(QDMA_HRED2, 0);
+	sysRegWrite(QDMA_SRED1, 0);
+	sysRegWrite(QDMA_SRED2, 0);
+	sfq0 = pci_alloc_consistent(NULL, 256*sizeof(struct SFQ_table), &sfq_phy0);
+	memset(sfq0, 0x0, 256*sizeof(struct SFQ_table) );
+	for (i=0; i < 256; i++) {
+			sfq0[i].sfq_info1.VQHPTR = 0xdeadbeef;
+      sfq0[i].sfq_info2.VQTPTR = 0xdeadbeef;
+	}
+#if(1)
+	sfq1 = pci_alloc_consistent(NULL, 256*sizeof(struct SFQ_table), &sfq_phy1);
 
+	memset(sfq1, 0x0, 256*sizeof(struct SFQ_table) );
+	for (i=0; i < 256; i++) {
+			sfq1[i].sfq_info1.VQHPTR = 0xdeadbeef;
+      sfq1[i].sfq_info2.VQTPTR = 0xdeadbeef;
+	}
+	
+	sfq2 = pci_alloc_consistent(NULL, 256*sizeof(struct SFQ_table), &sfq_phy2);
+	memset(sfq2, 0x0, 256*sizeof(struct SFQ_table) );
+	for (i=0; i < 256; i++) {
+			sfq2[i].sfq_info1.VQHPTR = 0xdeadbeef;
+      sfq2[i].sfq_info2.VQTPTR = 0xdeadbeef;
+	}
+
+	sfq3 = pci_alloc_consistent(NULL, 256*sizeof(struct SFQ_table), &sfq_phy3);
+	memset(sfq3, 0x0, 256*sizeof(struct SFQ_table) );
+	for (i=0; i < 256; i++) {
+			sfq3[i].sfq_info1.VQHPTR = 0xdeadbeef;
+      sfq3[i].sfq_info2.VQTPTR = 0xdeadbeef;
+	}
+
+#endif
+	 	printk("*****sfq_phy0 is 0x%x!!!*******\n", sfq_phy0);
+		printk("*****sfq_phy1 is 0x%x!!!*******\n", sfq_phy1);
+		printk("*****sfq_phy2 is 0x%x!!!*******\n", sfq_phy2);
+		printk("*****sfq_phy3 is 0x%x!!!*******\n", sfq_phy3);
+		printk("*****sfq_virt0 is 0x%x!!!*******\n", sfq0);
+		printk("*****sfq_virt1 is 0x%x!!!*******\n", sfq1);
+		printk("*****sfq_virt2 is 0x%x!!!*******\n", sfq2);
+		printk("*****sfq_virt3 is 0x%x!!!*******\n", sfq3);
+		printk("*****sfq_virt0 is 0x%x!!!*******\n", sfq0);
+		sysRegWrite(VQTX_TB_BASE0, (u32)sfq_phy0);
+		sysRegWrite(VQTX_TB_BASE1, (u32)sfq_phy1);
+		sysRegWrite(VQTX_TB_BASE2, (u32)sfq_phy2);
+		sysRegWrite(VQTX_TB_BASE3, (u32)sfq_phy3);
+
+	 return 1;
+}
+#endif
 bool fq_qdma_init(struct net_device *dev)
 {
 	END_DEVICE* ei_local = netdev_priv(dev);
-	struct QDMA_txdesc *free_head = NULL;
+	//struct QDMA_txdesc *free_head = NULL;
 	unsigned int phy_free_head;
 	unsigned int phy_free_tail;
 	unsigned int *free_page_head = NULL;
 	unsigned int phy_free_page_head;
 	int i;
-
+    
 	free_head = pci_alloc_consistent(NULL, NUM_QDMA_PAGE * sizeof(struct QDMA_txdesc), &phy_free_head);
 	if (unlikely(free_head == NULL)){
 		printk(KERN_ERR "QDMA FQ decriptor not available...\n");
@@ -312,7 +419,7 @@ bool fq_qdma_init(struct net_device *dev)
 
 	free_page_head = pci_alloc_consistent(NULL, NUM_QDMA_PAGE * QDMA_PAGE_SIZE, &phy_free_page_head);
 	if (unlikely(free_page_head == NULL)){
-		printk(KERN_ERR "QDMA FQ pager not available...\n");
+		printk(KERN_ERR "QDMA FQ page not available...\n");
 		return 0;
 	}	
 	for (i=0; i < NUM_QDMA_PAGE; i++) {
@@ -344,7 +451,7 @@ bool fq_qdma_init(struct net_device *dev)
 	ei_local->phy_free_head = phy_free_head;
 	ei_local->free_page_head = free_page_head;
 	ei_local->phy_free_page_head = phy_free_page_head;
-	return 1;
+    return 1;
 }
 
 int fe_dma_init(struct net_device *dev)
@@ -353,7 +460,11 @@ int fe_dma_init(struct net_device *dev)
 	int i;
 	unsigned int	regVal;
 	END_DEVICE* ei_local = netdev_priv(dev);
-
+	
+	
+	#if defined (CONFIG_HW_SFQ)
+  	sfq_init();
+  #endif
 	fq_qdma_init(dev);
 
 	while(1)
@@ -375,9 +486,8 @@ int fe_dma_init(struct net_device *dev)
 
 	qdma_tx_desc_alloc();
 
-
 	/* Initial RX Ring 0*/
-
+	
 #ifdef CONFIG_32B_DESC
 	ei_local->qrx_ring = kmalloc(NUM_QRX_DESC * sizeof(struct PDMA_rxdesc), GFP_KERNEL);
 	ei_local->phy_qrx_ring = virt_to_phys(ei_local->qrx_ring);
@@ -399,6 +509,7 @@ int fe_dma_init(struct net_device *dev)
 
 	regVal = sysRegRead(QDMA_GLO_CFG);
 	regVal &= 0x000000FF;
+
 	sysRegWrite(QDMA_GLO_CFG, regVal);
 	regVal=sysRegRead(QDMA_GLO_CFG);
 
@@ -412,7 +523,8 @@ int fe_dma_init(struct net_device *dev)
 #endif
 	sysRegWrite(QDMA_RST_CFG, PST_DRX_IDX0);
 
-
+        ei_local->rx_ring0 = ei_local->qrx_ring;
+#if !defined (CONFIG_RAETH_QDMATX_QDMARX)	
 	/* Initial PDMA RX Ring 0*/
 #ifdef CONFIG_32B_DESC
         ei_local->rx_ring0 = kmalloc(NUM_RX_DESC * sizeof(struct PDMA_rxdesc), GFP_KERNEL);
@@ -445,15 +557,146 @@ int fe_dma_init(struct net_device *dev)
         rx_calc_idx0 =  sysRegRead(RX_CALC_IDX0);
 #endif
         sysRegWrite(PDMA_RST_CFG, PST_DRX_IDX0);
-        	
-
+#endif	
+#if !defined (CONFIG_HW_SFQ)
         /* Enable randon early drop and set drop threshold automatically */
 	sysRegWrite(QDMA_FC_THRES, 0x174444);
+#endif
 	sysRegWrite(QDMA_HRED2, 0x0);
 	set_fe_dma_glo_cfg();
-	
+#if defined	(CONFIG_ARCH_MT7623)
+	printk("Enable QDMA TX NDP coherence check and re-read mechanism\n");
+	regVal=sysRegRead(QDMA_GLO_CFG);
+	regVal = regVal | 0x400;
+	sysRegWrite(QDMA_GLO_CFG, regVal);
+	printk("***********QDMA_GLO_CFG=%x\n", sysRegRead(QDMA_GLO_CFG));
+#endif	
+
 	return 1;
 }
+
+#if defined (CONFIG_HW_SFQ)
+
+int sfq_prot = 0;
+int proto_id=0;
+int udp_source_port=0;
+int tcp_source_port=0;
+int ack_packt =0;
+int SfqParseLayerInfo(struct sk_buff * skb)
+{
+
+	struct vlan_hdr *vh_sfq = NULL;
+	struct ethhdr *eth_sfq = NULL;
+	struct iphdr *iph_sfq = NULL;
+	struct ipv6hdr *ip6h_sfq = NULL;
+	struct tcphdr *th_sfq = NULL;
+	struct udphdr *uh_sfq = NULL;
+#ifdef CONFIG_RAETH_HW_VLAN_TX
+	struct vlan_hdr pseudo_vhdr_sfq;
+#endif
+	
+	memset(&SfqParseResult, 0, sizeof(SfqParseResult));
+
+	eth_sfq = (struct ethhdr *)skb->data;
+	memcpy(SfqParseResult.dmac, eth_sfq->h_dest, ETH_ALEN);
+	memcpy(SfqParseResult.smac, eth_sfq->h_source, ETH_ALEN);
+	SfqParseResult.eth_type = eth_sfq->h_proto;
+	
+	
+	if (SfqParseResult.eth_type == htons(ETH_P_8021Q)){
+		SfqParseResult.vlan1_gap = VLAN_HLEN;
+		vh_sfq = (struct vlan_hdr *)(skb->data + ETH_HLEN);
+		SfqParseResult.eth_type = vh_sfq->h_vlan_encapsulated_proto;
+	}else{
+		SfqParseResult.vlan1_gap = 0;
+	}
+		
+	
+	
+	LAYER2_HEADER(skb) = skb->data;
+  LAYER3_HEADER(skb) = (skb->data + ETH_HLEN + (SfqParseResult.vlan1_gap));
+  
+
+  
+	/* set layer4 start addr */
+	if ((SfqParseResult.eth_type == htons(ETH_P_IP)) || (SfqParseResult.eth_type == htons(ETH_P_PPP_SES) 
+		&& SfqParseResult.ppp_tag == htons(PPP_IP))) {
+		iph_sfq = (struct iphdr *)LAYER3_HEADER(skb);
+
+		//prepare layer3/layer4 info
+		memcpy(&SfqParseResult.iph, iph_sfq, sizeof(struct iphdr));
+		if (iph_sfq->protocol == IPPROTO_TCP) {
+
+			LAYER4_HEADER(skb) = ((uint8_t *) iph_sfq + (iph_sfq->ihl * 4));
+			th_sfq = (struct tcphdr *)LAYER4_HEADER(skb);
+			memcpy(&SfqParseResult.th, th_sfq, sizeof(struct tcphdr));
+			SfqParseResult.pkt_type = IPV4_HNAPT;
+			//printk("tcp parsing\n");
+			tcp_source_port = ntohs(SfqParseResult.th.source);
+			udp_source_port = 0;
+			#if(0) //for TCP ack, test use	
+				if(ntohl(SfqParseResult.iph.saddr) == 0xa0a0a04){ // tcp ack packet 
+					ack_packt = 1;
+				}else { 
+					ack_packt = 0;
+				}
+			#endif
+      sfq_prot = 2;//IPV4_HNAPT
+      proto_id = 1;//TCP
+			if(iph_sfq->frag_off & htons(IP_MF|IP_OFFSET)) {
+				//return 1;
+			}
+		} else if (iph_sfq->protocol == IPPROTO_UDP) {
+			LAYER4_HEADER(skb) = ((uint8_t *) iph_sfq + iph_sfq->ihl * 4);
+			uh_sfq = (struct udphdr *)LAYER4_HEADER(skb);
+			memcpy(&SfqParseResult.uh, uh_sfq, sizeof(struct udphdr));
+			SfqParseResult.pkt_type = IPV4_HNAPT;
+			udp_source_port = ntohs(SfqParseResult.uh.source);
+			tcp_source_port = 0;
+			ack_packt = 0;
+			sfq_prot = 2;//IPV4_HNAPT
+			proto_id =2;//UDP
+			if(iph_sfq->frag_off & htons(IP_MF|IP_OFFSET)) {
+				return 1;
+			}
+		}else{
+			sfq_prot = 1;
+		}
+	}else if (SfqParseResult.eth_type == htons(ETH_P_IPV6) || 
+			(SfqParseResult.eth_type == htons(ETH_P_PPP_SES) &&
+		        SfqParseResult.ppp_tag == htons(PPP_IPV6))) {
+			ip6h_sfq = (struct ipv6hdr *)LAYER3_HEADER(skb);
+			memcpy(&SfqParseResult.ip6h, ip6h_sfq, sizeof(struct ipv6hdr));
+
+			if (ip6h_sfq->nexthdr == NEXTHDR_TCP) {
+				LAYER4_HEADER(skb) = ((uint8_t *) ip6h_sfq + sizeof(struct ipv6hdr));
+				th_sfq = (struct tcphdr *)LAYER4_HEADER(skb);
+				memcpy(&SfqParseResult.th, th_sfq, sizeof(struct tcphdr));
+				SfqParseResult.pkt_type = IPV6_5T_ROUTE;
+				sfq_prot = 4;//IPV6_5T
+			#if(0) //for TCP ack, test use	
+	     if(ntohl(SfqParseResult.ip6h.saddr.s6_addr32[3]) == 8){
+				ack_packt = 1;
+			}else { 
+				ack_packt = 0;
+			}
+			#endif
+			} else if (ip6h_sfq->nexthdr == NEXTHDR_UDP) {
+				LAYER4_HEADER(skb) = ((uint8_t *) ip6h_sfq + sizeof(struct ipv6hdr));
+				uh_sfq = (struct udphdr *)LAYER4_HEADER(skb);
+				memcpy(&SfqParseResult.uh, uh_sfq, sizeof(struct udphdr));
+				SfqParseResult.pkt_type = IPV6_5T_ROUTE;
+				ack_packt = 0;
+				sfq_prot = 4;//IPV6_5T
+	
+			}else{
+				sfq_prot = 3;//IPV6_3T
+			}
+	}
+	
+	return 0;
+}
+#endif
 
 inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac_no)
 {
@@ -482,9 +725,14 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 #ifdef CONFIG_PSEUDO_SUPPORT
 	PSEUDO_ADAPTER *pAd;
 #endif
-	cpu_ptr = PHYS_TO_VIRT(ei_local->tx_cpu_ptr);
-	dma_ptr = PHYS_TO_VIRT(ei_local->tx_dma_ptr);
+	//cpu_ptr = PHYS_TO_VIRT(ei_local->tx_cpu_ptr);
+	//dma_ptr = PHYS_TO_VIRT(ei_local->tx_dma_ptr);
+	//ctx_offset = GET_TXD_OFFSET(&cpu_ptr);
+	cpu_ptr = (ei_local->tx_cpu_ptr);
 	ctx_offset = GET_TXD_OFFSET(&cpu_ptr);
+	cpu_ptr = phys_to_virt(ei_local->tx_cpu_ptr);
+	dma_ptr = phys_to_virt(ei_local->tx_dma_ptr);
+	cpu_ptr = (ei_local->txd_pool + (ctx_offset));
 	ei_local->skb_free[ctx_offset] = skb;
 #if defined (CONFIG_RAETH_TSO)
         init_cpu_ptr = cpu_ptr;
@@ -494,17 +742,55 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 #if !defined (CONFIG_RAETH_TSO)
 
 	//2. prepare data
-	cpu_ptr->txd_info1.SDP = VIRT_TO_PHYS(skb->data);
+	//cpu_ptr->txd_info1.SDP = VIRT_TO_PHYS(skb->data);
+	cpu_ptr->txd_info1.SDP = virt_to_phys(skb->data);
 	cpu_ptr->txd_info3.SDL = skb->len;
+#if defined (CONFIG_HW_SFQ)
+	SfqParseLayerInfo(skb);
+  cpu_ptr->txd_info4.VQID0 = 1;//1:HW hash 0:CPU
 
+
+#if(0)// for tcp ack use, test use  
+  if (ack_packt==1){
+  	cpu_ptr->txd_info3.QID = 0x0a;
+  	//cpu_ptr->txd_info3.VQID = 0;
+  }else{
+			cpu_ptr->txd_info3.QID = 0;
+  }
+#endif  
+  cpu_ptr->txd_info3.PROT = sfq_prot;
+  cpu_ptr->txd_info3.IPOFST = 14 + (SfqParseResult.vlan1_gap); //no vlan
+  
+#endif
 	if (gmac_no == 1) {
 		cpu_ptr->txd_info4.FPORT = 1;
 	}else {
 		cpu_ptr->txd_info4.FPORT = 2;
 	}
+	
+	cpu_ptr->txd_info3.QID = M2Q_table[skb->mark];
+#ifdef CONFIG_PSEUDO_SUPPORT
+	if((lan_wan_separate==1) && (gmac_no==2)){
+		cpu_ptr->txd_info3.QID += 8;
+#if defined (CONFIG_HW_SFQ)
+		if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+			cpu_ptr->txd_info3.QID = HwSfqQUp;
+		}
+#endif			
+	}
+#if defined (CONFIG_HW_SFQ)
+	if((lan_wan_separate==1) && (gmac_no==1)){
+		if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+			cpu_ptr->txd_info3.QID = HwSfqQDl;	
+		}
+	}
+#endif
+#endif //end CONFIG_PSEUDO_SUPPORT
 
-
-  cpu_ptr->txd_info3.QID = M2Q_table[skb->mark];
+	if(dbg==1){
+		printk("M2Q_table[%d]=%d\n", skb->mark, M2Q_table[skb->mark]);
+		printk("cpu_ptr->txd_info3.QID = %d\n", cpu_ptr->txd_info3.QID);
+	}
 #if 0 
 	iph = (struct iphdr *)skb_network_header(skb);
         if (iph->tos == 0xe0)
@@ -533,6 +819,54 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 	}
 #endif
 
+#ifdef CONFIG_RAETH_HW_VLAN_TX // QoS Web UI used
+
+	if((lan_wan_separate==1) && (vlan_tx_tag_get(skb)==2)){
+		cpu_ptr->txd_info3.QID += 8;
+#if defined (CONFIG_HW_SFQ)
+		if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+			cpu_ptr->txd_info3.QID = HwSfqQUp;
+		}
+#endif			
+	}
+#if defined (CONFIG_HW_SFQ)
+	if((lan_wan_separate==1) && (vlan_tx_tag_get(skb)==1)){
+		if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+			cpu_ptr->txd_info3.QID = HwSfqQDl;	
+		}
+	}
+#endif
+#endif // CONFIG_RAETH_HW_VLAN_TX
+
+
+//no hw van, no GE2, web UI used
+#ifndef CONFIG_PSEUDO_SUPPORT
+#ifndef CONFIG_RAETH_HW_VLAN_TX 
+	if(lan_wan_separate==1){
+		struct vlan_hdr *vh = NULL;
+    unsigned short vlanid = 0;
+    unsigned short vlan_TCI;
+		vh = (struct vlan_hdr *)(skb->data + ETH_HLEN);
+		vlan_TCI = vh->h_vlan_TCI;
+    vlanid = (vlan_TCI & VLAN_VID_MASK)>>8;
+		if(vlanid == 2)//to wan
+		{
+				cpu_ptr->txd_info3.QID += 8;
+#if defined (CONFIG_HW_SFQ)
+				if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+					cpu_ptr->txd_info3.QID = HwSfqQUp;
+				}
+#endif			
+		}else if(vlanid == 1){ //to lan
+#if defined (CONFIG_HW_SFQ)
+				if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+					cpu_ptr->txd_info3.QID = HwSfqQDl;	
+				}
+#endif
+		}
+	}
+#endif
+#endif
 #if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
 	if(FOE_MAGIC_TAG(skb) == FOE_MAGIC_PPE) {
 		if(ra_sw_nat_hook_rx!= NULL){
@@ -549,7 +883,7 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 #if defined (CONFIG_MIPS)	
 	dma_cache_sync(NULL, skb->data, skb->len, DMA_TO_DEVICE);
 #else
-	dma_sync_single_for_device(NULL, skb->data, skb->len, DMA_TO_DEVICE);
+	dma_sync_single_for_device(NULL, virt_to_phys(skb->data), skb->len, DMA_TO_DEVICE);
 #endif
 	cpu_ptr->txd_info3.SWC_bit = 1;
 
@@ -561,11 +895,13 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 	}
 
 	//4. hook new TXD in the end of queue
-	cpu_ptr->txd_info2.NDP = VIRT_TO_PHYS(free_txd);
+	//cpu_ptr->txd_info2.NDP = VIRT_TO_PHYS(free_txd);
+	cpu_ptr->txd_info2.NDP = (free_txd);
 
 
 	//5. move CPU_PTR to new TXD
-	ei_local->tx_cpu_ptr = VIRT_TO_PHYS(free_txd);	
+	//ei_local->tx_cpu_ptr = VIRT_TO_PHYS(free_txd);
+	ei_local->tx_cpu_ptr = (free_txd);
 	cpu_ptr->txd_info3.OWN_bit = 0;
 	sysRegWrite(QTX_CTX_PTR, ei_local->tx_cpu_ptr);
 	
@@ -578,9 +914,24 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 #endif			
 
 #else //#if !defined (CONFIG_RAETH_TSO)	
-        cpu_ptr->txd_info1.SDP = VIRT_TO_PHYS(skb->data);
+	cpu_ptr->txd_info1.SDP = virt_to_phys(skb->data);
 	cpu_ptr->txd_info3.SDL = (length - skb->data_len);
 	cpu_ptr->txd_info3.LS_bit = nr_frags ? 0:1;
+#if defined (CONFIG_HW_SFQ)		
+		SfqParseLayerInfo(skb);
+		 // printk("tcp_source_port=%d\n", tcp_source_port);
+#if(0)
+   cpu_ptr->txd_info4.VQID0 = 0;//1:HW hash 0:CPU
+  if (tcp_source_port==1000)  cpu_ptr->txd_info3.VQID = 0;
+  else if (tcp_source_port==1100)  cpu_ptr->txd_info3.VQID = 1;
+  else if (tcp_source_port==1200)  cpu_ptr->txd_info3.VQID = 2;
+  else cpu_ptr->txd_info3.VQID = 0;
+ #else 
+ 	cpu_ptr->txd_info4.VQID0 = 1;
+  cpu_ptr->txd_info3.PROT = sfq_prot;
+  cpu_ptr->txd_info3.IPOFST = 14 + (SfqParseResult.vlan1_gap); //no vlan
+#endif
+#endif
 	if (gmac_no == 1) {
 		cpu_ptr->txd_info4.FPORT = 1;
 	}else {
@@ -589,6 +940,27 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 	
 	cpu_ptr->txd_info4.TSO = 0;
         cpu_ptr->txd_info3.QID = M2Q_table[skb->mark]; 	
+#ifdef CONFIG_PSEUDO_SUPPORT //web UI used tso
+	if((lan_wan_separate==1) && (gmac_no==2)){
+		cpu_ptr->txd_info3.QID += 8;
+#if defined (CONFIG_HW_SFQ)
+		if(web_sfq_enable == 1 &&(skb->mark == 2)){ 
+			cpu_ptr->txd_info3.QID = HwSfqQUp;	
+		}
+#endif		
+	}
+#if defined (CONFIG_HW_SFQ)
+	if((lan_wan_separate==1) && (gmac_no==1)){
+		if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+				cpu_ptr->txd_info3.QID = HwSfqQDl;	
+		}
+	}
+#endif
+#endif //CONFIG_PSEUDO_SUPPORT
+	if(dbg==1){
+		printk("M2Q_table[%d]=%d\n", skb->mark, M2Q_table[skb->mark]);
+		printk("cpu_ptr->txd_info3.QID = %d\n", cpu_ptr->txd_info3.QID);
+	}
 #if defined (CONFIG_RAETH_CHECKSUM_OFFLOAD) && ! defined(CONFIG_RALINK_RT5350) && !defined (CONFIG_RALINK_MT7628)
 	if (skb->ip_summed == CHECKSUM_PARTIAL){
 	    cpu_ptr->txd_info4.TUI_CO = 7;
@@ -603,6 +975,55 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 	}else {
 	    cpu_ptr->txd_info4.VLAN_TAG = 0;
 	}
+#endif
+#ifdef CONFIG_RAETH_HW_VLAN_TX // QoS Web UI used tso
+
+	if((lan_wan_separate==1) && (vlan_tx_tag_get(skb)==2)){
+	//cpu_ptr->txd_info3.QID += 8;
+		cpu_ptr->txd_info3.QID += 8;
+#if defined (CONFIG_HW_SFQ)
+		if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+			cpu_ptr->txd_info3.QID = HwSfqQUp;
+		}
+#endif			
+	}
+#if defined (CONFIG_HW_SFQ)
+	if((lan_wan_separate==1) && (vlan_tx_tag_get(skb)==1)){
+		if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+			cpu_ptr->txd_info3.QID = HwSfqQDl;	
+		}
+	}
+#endif
+#endif // CONFIG_RAETH_HW_VLAN_TX
+
+
+//no hw van, no GE2, web UI used
+#ifndef CONFIG_PSEUDO_SUPPORT
+#ifndef CONFIG_RAETH_HW_VLAN_TX 
+	if(lan_wan_separate==1){
+		struct vlan_hdr *vh = NULL;
+    unsigned short vlanid = 0;
+    unsigned short vlan_TCI;
+		vh = (struct vlan_hdr *)(skb->data + ETH_HLEN);
+		vlan_TCI = vh->h_vlan_TCI;
+    vlanid = (vlan_TCI & VLAN_VID_MASK)>>8;
+		if(vlanid == 2)//eth2.2 to wan
+		{
+			cpu_ptr->txd_info3.QID += 8;
+#if defined (CONFIG_HW_SFQ)
+				if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+					cpu_ptr->txd_info3.QID = HwSfqQUp;
+				}
+#endif			
+		}else if(!strcmp(netdev, "eth2.1")){ // eth2.1 to lan
+#if defined (CONFIG_HW_SFQ)
+			if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+				cpu_ptr->txd_info3.QID = HwSfqQDl;	
+			}
+#endif
+		}
+}
+#endif
 #endif
 
 #if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
@@ -621,8 +1042,11 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
             printk("get_free_txd fail\n"); 
         return 0;
 	}
-        cpu_ptr->txd_info2.NDP = VIRT_TO_PHYS(free_txd);
-        ei_local->tx_cpu_ptr = VIRT_TO_PHYS(free_txd);
+        //cpu_ptr->txd_info2.NDP = VIRT_TO_PHYS(free_txd);
+        //ei_local->tx_cpu_ptr = VIRT_TO_PHYS(free_txd);
+	cpu_ptr->txd_info2.NDP = free_txd;
+	ei_local->tx_cpu_ptr = free_txd;
+
 
 	if(nr_frags > 0) {
 		for(i=0;i<nr_frags;i++) {
@@ -639,8 +1063,78 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 					size = MAX_TXD_LEN;			
 
 				//3. Update TXD info
-				cpu_ptr = free_txd;
+				cpu_ptr = (ei_local->txd_pool + (ctx_offset));
 				cpu_ptr->txd_info3.QID = M2Q_table[skb->mark];
+#ifdef CONFIG_PSEUDO_SUPPORT //QoS Web UI used , nr_frags
+				if((lan_wan_separate==1) && (gmac_no==2)){
+					//cpu_ptr->txd_info3.QID += 8;
+					cpu_ptr->txd_info3.QID += 8;
+#if defined (CONFIG_HW_SFQ)
+					if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+						cpu_ptr->txd_info3.QID = HwSfqQUp;	
+					}
+#endif
+				}
+#if defined (CONFIG_HW_SFQ)				
+				if((lan_wan_separate==1) && (gmac_no==1)){
+					if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+						cpu_ptr->txd_info3.QID = HwSfqQDl;	
+					}
+				}
+#endif
+#endif //CONFIG_PSEUDO_SUPPORT
+
+//QoS web used, nr_frags
+#ifdef CONFIG_RAETH_HW_VLAN_TX 
+	if((lan_wan_separate==1) && (vlan_tx_tag_get(skb)==2)){
+		cpu_ptr->txd_info3.QID += 8;
+#if defined (CONFIG_HW_SFQ)
+		if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+			cpu_ptr->txd_info3.QID = HwSfqQUp;
+		}
+#endif			
+	}
+#if defined (CONFIG_HW_SFQ)
+	if((lan_wan_separate==1) && (vlan_tx_tag_get(skb)==1)){
+		if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+			cpu_ptr->txd_info3.QID = HwSfqQDl;	
+		}
+	}
+#endif
+#endif // CONFIG_RAETH_HW_VLAN_TX
+//no hw van, no GE2, web UI used
+#ifndef CONFIG_PSEUDO_SUPPORT
+#ifndef CONFIG_RAETH_HW_VLAN_TX 
+	if(lan_wan_separate==1){
+		struct vlan_hdr *vh = NULL;
+    unsigned short vlanid = 0;
+    unsigned short vlan_TCI;
+		vh = (struct vlan_hdr *)(skb->data + ETH_HLEN);
+		vlan_TCI = vh->h_vlan_TCI;
+    vlanid = (vlan_TCI & VLAN_VID_MASK)>>8;
+		if(vlanid == 2))//eth2.2 to wan
+		{
+			cpu_ptr->txd_info3.QID += 8;
+#if defined (CONFIG_HW_SFQ)
+			if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+				cpu_ptr->txd_info3.QID = HwSfqQUp;
+			}
+#endif			
+		}
+		}else if(vlanid == 1){ // eth2.1 to lan
+#if defined (CONFIG_HW_SFQ)	
+			if(web_sfq_enable==1 &&(skb->mark == 2)){ 
+				cpu_ptr->txd_info3.QID = HwSfqQDl;	
+			}
+#endif
+		}
+	}
+#endif
+#endif
+	if(dbg==1){
+		printk("M2Q_table[%d]=%d\n", skb->mark, M2Q_table[skb->mark]);
+		printk("cpu_ptr->txd_info3.QID = %d\n", cpu_ptr->txd_info3.QID);
+	}
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,2,0)
 				cpu_ptr->txd_info1.SDP = pci_map_page(NULL, frag->page, frag->page_offset, frag->size, PCI_DMA_TODEVICE);
 #else
@@ -659,8 +1153,10 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 
 				//5. Get next TXD
 				ctx_offset = get_free_txd(&free_txd);
-				cpu_ptr->txd_info2.NDP = VIRT_TO_PHYS(free_txd);
-				ei_local->tx_cpu_ptr = VIRT_TO_PHYS(free_txd);
+				//cpu_ptr->txd_info2.NDP = VIRT_TO_PHYS(free_txd);
+				//ei_local->tx_cpu_ptr = VIRT_TO_PHYS(free_txd);
+				cpu_ptr->txd_info2.NDP = free_txd;
+				ei_local->tx_cpu_ptr = free_txd;
 				//6. Update offset and len.
 				offset += size;
 				len -= size;
@@ -671,7 +1167,9 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 
 	if(skb_shinfo(skb)->gso_segs > 1) {
 
-//		TsoLenUpdate(skb->len);
+#if defined (CONFIG_RAETH_TSO_DBG)
+		TsoLenUpdate(skb->len);
+#endif
 
 		/* TCP over IPv4 */
 		iph = (struct iphdr *)skb_network_header(skb);
@@ -681,14 +1179,26 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 #endif				
 		if((iph->version == 4) && (iph->protocol == IPPROTO_TCP)) {
 			th = (struct tcphdr *)skb_transport_header(skb);
-
+#if defined (CONFIG_HW_SFQ)
+#if(0)
+  init_cpu_ptr->txd_info4.VQID0 = 0;//1:HW hash 0:CPU
+  if (tcp_source_port==1000)  init_cpu_ptr->txd_info3.VQID = 0;
+  else if (tcp_source_port==1100)  init_cpu_ptr->txd_info3.VQID = 1;
+  else if (tcp_source_port==1200)  init_cpu_ptr->txd_info3.VQID = 2;
+  else cpu_ptr->txd_info3.VQID = 0;
+ #else 
+ init_cpu_ptr->txd_info4.VQID0 = 1;
+  init_cpu_ptr->txd_info3.PROT = sfq_prot;
+  init_cpu_ptr->txd_info3.IPOFST = 14 + (SfqParseResult.vlan1_gap); //no vlan
+#endif
+#endif
 			init_cpu_ptr->txd_info4.TSO = 1;
 
 			th->check = htons(skb_shinfo(skb)->gso_size);
 #if defined (CONFIG_MIPS)	
 			dma_cache_sync(NULL, th, sizeof(struct tcphdr), DMA_TO_DEVICE);
 #else
-			dma_sync_single_for_device(NULL, th, sizeof(struct tcphdr), DMA_TO_DEVICE);
+			dma_sync_single_for_device(NULL, virt_to_phys(th), sizeof(struct tcphdr), DMA_TO_DEVICE);
 #endif
 		} 
 	    
@@ -706,7 +1216,7 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 #if defined (CONFIG_MIPS)	
 			dma_cache_sync(NULL, th, sizeof(struct tcphdr), DMA_TO_DEVICE);
 #else
-			dma_sync_single_for_device(NULL, th, sizeof(struct tcphdr), DMA_TO_DEVICE);
+			dma_sync_single_for_device(NULL, virt_to_phys(th), sizeof(struct tcphdr), DMA_TO_DEVICE);
 #endif
 		}
 #endif
@@ -778,7 +1288,7 @@ int ei_start_xmit(struct sk_buff* skb, struct net_device *dev, int gmac_no)
 #if defined (CONFIG_MIPS)	
 	dma_cache_sync(NULL, skb->data, skb->len, DMA_TO_DEVICE);
 #else
-	dma_sync_single_for_device(NULL, skb->data, skb->len, DMA_TO_DEVICE);
+	dma_sync_single_for_device(NULL, virt_to_phys(skb->data), skb->len, DMA_TO_DEVICE);
 #endif
 
 
@@ -809,7 +1319,7 @@ int ei_start_xmit(struct sk_buff* skb, struct net_device *dev, int gmac_no)
         rt2880_eth_send(dev, skb, gmac_no); // need to modify rt2880_eth_send() for QDMA
 		if (ei_local->free_txd_num < 3)
 		{
-#if defined (CONFIG_RAETH_STOP_RX_WHEN_TX_FULL) 		    
+#if defined (CONFIG_RAETH_SW_FC) 		    
 		    netif_stop_queue(dev);
 #ifdef CONFIG_PSEUDO_SUPPORT
 		    netif_stop_queue(ei_local->PseudoDev);
@@ -829,6 +1339,9 @@ int ei_start_xmit(struct sk_buff* skb, struct net_device *dev, int gmac_no)
 		} else
 #endif
 		ei_local->stat.tx_dropped++;
+#if defined (CONFIG_RAETH_SW_FC)
+                printk("tx_ring_full, drop packet\n");
+#endif		
 		kfree_skb(skb);
                 spin_unlock_irqrestore(&ei_local->page_lock, flags);
 		return 0;
@@ -847,41 +1360,41 @@ void ei_xmit_housekeeping(unsigned long unused)
     struct QDMA_txdesc *dma_ptr = NULL;
     struct QDMA_txdesc *cpu_ptr = NULL;
     struct QDMA_txdesc *tmp_ptr = NULL;
-    unsigned int htx_offset = 0;
+    unsigned int ctx_offset = 0;
+    unsigned int dtx_offset = 0;
 
-    dma_ptr = PHYS_TO_VIRT(sysRegRead(QTX_DRX_PTR));
-    cpu_ptr = PHYS_TO_VIRT(sysRegRead(QTX_CRX_PTR));
-    if(cpu_ptr != dma_ptr && (cpu_ptr->txd_info3.OWN_bit == 1)) {
+    cpu_ptr = sysRegRead(QTX_CRX_PTR);
+    dma_ptr = sysRegRead(QTX_DRX_PTR);
+    ctx_offset = GET_TXD_OFFSET(&cpu_ptr);
+    dtx_offset = GET_TXD_OFFSET(&dma_ptr);
+    cpu_ptr     = (ei_local->txd_pool + (ctx_offset));
+    dma_ptr     = (ei_local->txd_pool + (dtx_offset));
+
 	while(cpu_ptr != dma_ptr && (cpu_ptr->txd_info3.OWN_bit == 1)) {
-
-	    //1. keep cpu next TXD			
-	    tmp_ptr = PHYS_TO_VIRT(cpu_ptr->txd_info2.NDP);
-            htx_offset = GET_TXD_OFFSET(&tmp_ptr);
-            //2. free skb meomry
+                //1. keep cpu next TXD
+		tmp_ptr = cpu_ptr->txd_info2.NDP;
+                //2. release TXD
+		put_free_txd(ctx_offset);
+                //3. update ctx_offset and free skb memory
+		ctx_offset = GET_TXD_OFFSET(&tmp_ptr);
 #if defined (CONFIG_RAETH_TSO)
-	    if(ei_local->skb_free[htx_offset]!=(struct  sk_buff *)0xFFFFFFFF) {
-		    dev_kfree_skb_any(ei_local->skb_free[htx_offset]); 
-	    }
+		if(ei_local->skb_free[ctx_offset]!=(struct  sk_buff *)0xFFFFFFFF) {
+			dev_kfree_skb_any(ei_local->skb_free[ctx_offset]);
+		}
 #else
-	    dev_kfree_skb_any(ei_local->skb_free[htx_offset]); 
-#endif			
-                
-	    ei_local->skb_free[htx_offset] = 0;
-	    //3. release TXD
-	    htx_offset = GET_TXD_OFFSET(&cpu_ptr);			
-	    put_free_txd(htx_offset);
+		dev_kfree_skb_any(ei_local->skb_free[ctx_offset]);
+#endif
+		ei_local->skb_free[ctx_offset] = 0;
 
-            netif_wake_queue(dev);
+		netif_wake_queue(dev);
 #ifdef CONFIG_PSEUDO_SUPPORT
-	    netif_wake_queue(ei_local->PseudoDev);
-#endif			
-	    tx_ring_full=0;
-                
-	    //4. update cpu_ptr to next ptr
-	    cpu_ptr = tmp_ptr;
+		netif_wake_queue(ei_local->PseudoDev);
+#endif
+		tx_ring_full=0;
+                //4. update cpu_ptr
+		cpu_ptr = (ei_local->txd_pool + ctx_offset);
 	}
-    }
-    sysRegWrite(QTX_CRX_PTR, VIRT_TO_PHYS(cpu_ptr));
+	sysRegWrite(QTX_CRX_PTR, (ei_local->phy_txd_pool + (ctx_offset << 4)));
 #ifndef CONFIG_RAETH_NAPI
     reg_int_mask=sysRegRead(QFE_INT_ENABLE);
 #if defined (DELAY_INT)

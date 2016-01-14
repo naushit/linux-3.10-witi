@@ -183,7 +183,8 @@ struct msdc_hw msdc0_hw = {
 	.dat_drv        = 4,
 	.data_pins      = 4,
 	.data_offset    = 0,
-	.flags          = MSDC_SYS_SUSPEND | MSDC_CD_PIN_EN | MSDC_REMOVABLE | MSDC_HIGHSPEED,
+	.flags          = MSDC_SYS_SUSPEND | MSDC_WP_PIN_EN | MSDC_CD_PIN_EN | MSDC_REMOVABLE | MSDC_HIGHSPEED,
+//	.flags          = MSDC_SYS_SUSPEND | MSDC_WP_PIN_EN | MSDC_CD_PIN_EN | MSDC_REMOVABLE,
 };
 
 static struct resource mtk_sd_resources[] = {
@@ -3001,7 +3002,6 @@ static int __init mt_msdc_init(void)
     reg1 = sdr_read32((volatile u32*)(RALINK_SYSCTL_BASE + 0x1340)) | (0x1<<11); //Normal mode(AP mode) , SDXC CLK=PAD_GPIO0=GPIO11, driving = 8mA
     sdr_write32((volatile u32*)(RALINK_SYSCTL_BASE + 0x1340), reg1);
 
-
 #endif
 #if defined (CONFIG_MTK_MMC_EMMC_8BIT)
     reg |= 0x3<<26 | 0x3<<28 | 0x3<<30;
@@ -3035,6 +3035,6 @@ module_init(mt_msdc_init);
 module_exit(mt_msdc_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("MediaTek MT6575 SD/MMC Card Driver");
-MODULE_AUTHOR("Infinity Chen <infinity.chen@mediatek.com>");
+MODULE_AUTHOR("Mediatek");
 
 EXPORT_SYMBOL(msdc_6575_host);

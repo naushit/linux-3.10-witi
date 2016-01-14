@@ -88,6 +88,13 @@
 /* Default trace flags */
 #define L2TP_DEFAULT_DEBUG_FLAGS	0
 
+
+#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
+uint32_t l2tp_fast_path = 0;
+EXPORT_SYMBOL(l2tp_fast_path);
+extern uint32_t pptp_fast_path;
+#endif
+
 /* Private data stored for received packets in the skb.
  */
 struct l2tp_skb_cb {
@@ -1154,7 +1161,7 @@ int l2tp_xmit_skb(struct l2tp_session *session, struct sk_buff *skb, int hdr_len
 	 * UDP and L2TP headers. If not enough, expand it to
 	 * make room. Adjust truesize.
 	 */
-	headroom = NET_SKB_PAD + sizeof(struct iphdr) +
+	headroom = NET_SKB_PAD_ORIG + sizeof(struct iphdr) +
 		uhlen + hdr_len;
 	if (skb_cow_head(skb, headroom)) {
 		kfree_skb(skb);
@@ -1591,6 +1598,12 @@ int l2tp_tunnel_create(struct net *net, int fd, int version, u32 tunnel_id, u32 
 			goto err;
 		}
 	}
+/*goto:l2tp fast path*/
+#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
+	l2tp_fast_path = 1;
+	pptp_fast_path = 0;
+	printk("l2tp_tunnel_create L2TP core driver, %s!!!!!!!!!!!1\n", L2TP_DRV_VERSION);
+#endif
 
 	sk = sock->sk;
 
@@ -1709,6 +1722,10 @@ EXPORT_SYMBOL_GPL(l2tp_tunnel_create);
  */
 int l2tp_tunnel_delete(struct l2tp_tunnel *tunnel)
 {
+#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
+	l2tp_fast_path = 0;
+	printk("l2tp_tunnel_delete L2TP core driver, %s!!!!!!!!!!!1\n", L2TP_DRV_VERSION);
+#endif
 	l2tp_tunnel_closeall(tunnel);
 	return (false == queue_work(l2tp_wq, &tunnel->del_work));
 }

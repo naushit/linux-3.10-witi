@@ -214,6 +214,12 @@ static struct mtd_partition rt2880_partitions[] = {
                 offset:         MTD_ROOTFS2_PART_OFFSET,
 #endif
 #endif
+#ifdef CONFIG_EXTEND_NVRAM
+        }, {
+                name:           "Config2",
+                size:           MTD_CONFIG_PART_SIZE,
+                offset:         MTD_CONFIG2_PART_OFFSET,
+#endif
         }
 };
 
@@ -3140,7 +3146,8 @@ static int page_remap(struct ra_nand_chip *ra, int page)
 					end_blk += (rt2880_partitions[i+1].size >> ra->erase_shift);
 				if (i == NAND_MTD_ROOTFS_PARTITION_NO)
 					start_blk -= (rt2880_partitions[i-1].size >> ra->erase_shift);
-#endif				
+#endif
+				
 				page_in_block = page & ((1 << CONFIG_NUMPAGE_PER_BLOCK_BIT) - 1);
 				block_offset = (page >> CONFIG_NUMPAGE_PER_BLOCK_BIT) - start_blk;
 				

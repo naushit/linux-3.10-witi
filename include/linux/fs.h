@@ -31,6 +31,10 @@
 #include <asm/byteorder.h>
 #include <uapi/linux/fs.h>
 
+#if defined (CONFIG_SPLICE_NET_SUPPORT)
+#include <linux/net.h>
+#endif
+
 struct export_operations;
 struct hd_geometry;
 struct iovec;
@@ -1330,7 +1334,6 @@ struct super_block {
 
 	/* Being remounted read-only */
 	int s_readonly_remount;
-
 #if defined(CONFIG_SUPPORT_OPENWRT)
 	/*
 	 * Indicates how deep in a filesystem stack this SB is
@@ -1554,6 +1557,10 @@ struct file_operations {
 	int (*flock) (struct file *, int, struct file_lock *);
 	ssize_t (*splice_write)(struct pipe_inode_info *, struct file *, loff_t *, size_t, unsigned int);
 	ssize_t (*splice_read)(struct file *, loff_t *, struct pipe_inode_info *, size_t, unsigned int);
+#if defined (CONFIG_SPLICE_NET_SUPPORT)
+	ssize_t (*splice_from_socket)(struct file *, struct socket *,
+		loff_t __user *ppos, size_t count);
+#endif
 	int (*setlease)(struct file *, long, struct file_lock **);
 	long (*fallocate)(struct file *file, int mode, loff_t offset,
 			  loff_t len);
@@ -2441,6 +2448,11 @@ extern ssize_t generic_splice_sendpage(struct pipe_inode_info *pipe,
 #if defined(CONFIG_SUPPORT_OPENWRT)
 extern long do_splice_direct(struct file *in, loff_t *ppos, struct file *out,
 		loff_t *opos, size_t len, unsigned int flags);
+#endif
+
+#if defined (CONFIG_SPLICE_NET_SUPPORT)
+extern ssize_t generic_splice_from_socket(struct file *file, struct socket *sock,
+						loff_t __user *ppos, size_t count);
 #endif
 
 extern void

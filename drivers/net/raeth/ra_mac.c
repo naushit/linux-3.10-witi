@@ -17,7 +17,6 @@
 #include <asm/system.h>
 #include <linux/mca.h>
 #endif
-#include <asm/io.h>
 #include <asm/bitops.h>
 #include <asm/io.h>
 #include <asm/dma.h>
@@ -47,6 +46,9 @@
 #include "raether.h"
 #include "ra_mac.h"
 #include "ra_ethtool.h"
+#if defined(CONFIG_RAETH_PDMA_DVT)
+#include "dvt/raether_pdma_dvt.h"
+#endif  //#if defined(CONFIG_RAETH_PDMA_DVT)
 
 extern struct net_device *dev_raether;
 
@@ -113,8 +115,35 @@ int tot_called1;
 int tot_called2;
 #endif
 
+#if defined(CONFIG_RAETH_HW_LRO)
+#define HW_LRO_RING_NUM 3
+#define MAX_HW_LRO_AGGR 64
+unsigned int hw_lro_agg_num_cnt[HW_LRO_RING_NUM][MAX_HW_LRO_AGGR + 1];
+unsigned int hw_lro_agg_size_cnt[HW_LRO_RING_NUM][16];
+unsigned int hw_lro_tot_agg_cnt[HW_LRO_RING_NUM];
+unsigned int hw_lro_tot_flush_cnt[HW_LRO_RING_NUM];
+#if defined(CONFIG_RAETH_HW_LRO_REASON_DBG)
+unsigned int hw_lro_agg_flush_cnt[HW_LRO_RING_NUM];
+unsigned int hw_lro_age_flush_cnt[HW_LRO_RING_NUM];
+unsigned int hw_lro_seq_flush_cnt[HW_LRO_RING_NUM];
+unsigned int hw_lro_timestamp_flush_cnt[HW_LRO_RING_NUM];
+unsigned int hw_lro_norule_flush_cnt[HW_LRO_RING_NUM];
+#endif  /* CONFIG_RAETH_HW_LRO_REASON_DBG */
+#endif  /* CONFIG_RAETH_HW_LRO */
+
+#if defined(CONFIG_RAETH_INT_DBG)
+struct raeth_int_t raeth_int;
+#endif	/* CONFIG_RAETH_INT_DBG */
+
 #if defined(CONFIG_RAETH_QDMA)
 extern unsigned int M2Q_table[64];
+extern struct QDMA_txdesc *free_head; 
+#endif
+#if defined (CONFIG_ARCH_MT7623)
+extern struct SFQ_table *sfq0;
+extern struct SFQ_table *sfq1;
+extern struct SFQ_table *sfq2;
+extern struct SFQ_table *sfq3;
 #endif
 
 #if defined(CONFIG_USER_SNMPD)
@@ -151,19 +180,15 @@ static const struct file_operations ra_snmp_seq_fops = {
 
 
 #if defined (CONFIG_GIGAPHY) || defined (CONFIG_100PHY) || \
-    defined (CONFIG_P5_MAC_TO_PHY_MODE) || defined (CONFIG_RAETH_GMAC2) || \
-    defined (CONFIG_P4_MAC_TO_PHY_MODE)
+    defined (CONFIG_P5_MAC_TO_PHY_MODE) || defined (CONFIG_RAETH_GMAC2)
 #if defined (CONFIG_RALINK_RT6855) || defined(CONFIG_RALINK_RT6855A) || \
-    defined (CONFIG_RALINK_MT7620) || defined(CONFIG_RALINK_MT7621) 
+    defined (CONFIG_RALINK_MT7620) || defined(CONFIG_RALINK_MT7621)  || \
+    defined (CONFIG_ARCH_MT7623)
 void enable_auto_negotiate(int unused)
 {
 	u32 regValue;
-#if !defined (CONFIG_RALINK_MT7621)
-#if defined (CONFIG_MAC_TO_GIGAPHY_MODE_ADDR)
+#if !defined (CONFIG_RALINK_MT7621) && !defined (CONFIG_ARCH_MT7623)
 	u32 addr = CONFIG_MAC_TO_GIGAPHY_MODE_ADDR;
-#else
-	u32 addr = (CONFIG_MAC_TO_GIGAPHY_MODE_ADDR2+1);
-#endif
 #endif
 
 #if defined (CONFIG_RALINK_MT7621)
@@ -181,11 +206,11 @@ void enable_auto_negotiate(int unused)
 #if defined (CONFIG_RALINK_MT7620)
 	regValue |= ((addr-1) << 0);//setup PHY address for auto polling (Start Addr).
 	regValue |= (addr << 8);// setup PHY address for auto polling (End Addr).
-#elif defined (CONFIG_RALINK_MT7621)
+#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 #if defined (CONFIG_GE_RGMII_INTERNAL_P0_AN)|| defined (CONFIG_GE_RGMII_INTERNAL_P4_AN) || defined (CONFIG_GE2_RGMII_AN)
 	regValue |= ((CONFIG_MAC_TO_GIGAPHY_MODE_ADDR2-1)&0x1f << 0);//setup PHY address for auto polling (Start Addr).
 	regValue |= (CONFIG_MAC_TO_GIGAPHY_MODE_ADDR2 << 8);// setup PHY address for auto polling (End Addr).
-#elif defined (CONFIG_GE1_RGMII_AN)
+#else
 	regValue |= (CONFIG_MAC_TO_GIGAPHY_MODE_ADDR << 0);//setup PHY address for auto polling (Start Addr).
 	regValue |= (CONFIG_MAC_TO_GIGAPHY_MODE_ADDR2 << 8);// setup PHY address for auto polling (End Addr).
 #endif
@@ -194,6 +219,7 @@ void enable_auto_negotiate(int unused)
 	regValue |= (addr << 8);// setup PHY address for auto polling (End Addr).
 #endif
 
+	/*kurtis: AN is strange*/
 	sysRegWrite(ESW_PHY_POLLING, regValue);
 
 #if defined (CONFIG_P4_MAC_TO_PHY_MODE)
@@ -201,42 +227,6 @@ void enable_auto_negotiate(int unused)
 #endif
 #if defined (CONFIG_P5_MAC_TO_PHY_MODE)
 	*(unsigned long *)(RALINK_ETH_SW_BASE+0x3500) = 0x56330;
-#endif
-}
-#elif defined (CONFIG_RALINK_RT2880) || defined(CONFIG_RALINK_RT3883) || \
-      defined (CONFIG_RALINK_RT3052) || defined(CONFIG_RALINK_RT3352)
-
-void enable_auto_negotiate(int ge)
-{
-#if defined (CONFIG_RALINK_RT3052) || defined (CONFIG_RALINK_RT3352)
-        u32 regValue = sysRegRead(0xb01100C8);
-#else
-	u32 regValue;
-	regValue = (ge == 2)? sysRegRead(MDIO_CFG2) : sysRegRead(MDIO_CFG);
-#endif
-
-        regValue &= 0xe0ff7fff;                 // clear auto polling related field:
-                                                // (MD_PHY1ADDR & GP1_FRC_EN).
-        regValue |= 0x20000000;                 // force to enable MDC/MDIO auto polling.
-
-#if defined (CONFIG_GE2_RGMII_AN) || defined (CONFIG_GE2_MII_AN)
-	if(ge==2) {
-	    regValue |= (CONFIG_MAC_TO_GIGAPHY_MODE_ADDR2 << 24);               // setup PHY address for auto polling.
-	}
-#endif
-#if defined (CONFIG_GE1_RGMII_AN) || defined (CONFIG_GE1_MII_AN) || defined (CONFIG_P5_MAC_TO_PHY_MODE)
-	if(ge==1) {
-	    regValue |= (CONFIG_MAC_TO_GIGAPHY_MODE_ADDR << 24);               // setup PHY address for auto polling.
-	}
-#endif
-
-#if defined (CONFIG_RALINK_RT3052) || defined (CONFIG_RALINK_RT3352)
-	sysRegWrite(0xb01100C8, regValue);
-#else
-	if (ge == 2)
-		sysRegWrite(MDIO_CFG2, regValue);
-	else
-		sysRegWrite(MDIO_CFG, regValue);
 #endif
 }
 #endif
@@ -261,11 +251,9 @@ void ei_irq_clear(void)
 
 void rt2880_gmac_hard_reset(void)
 {
-#if !defined (CONFIG_RALINK_RT6855A)
 	//FIXME
 	sysRegWrite(RSTCTRL, RALINK_FE_RST);
 	sysRegWrite(RSTCTRL, 0);
-#endif
 }
 
 void ra2880EnableInterrupt()
@@ -282,16 +270,9 @@ void ra2880MacAddressSet(unsigned char p[6])
         unsigned long regValue;
 
 	regValue = (p[0] << 8) | (p[1]);
-#if defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#if defined (CONFIG_RALINK_MT7628)
         sysRegWrite(SDM_MAC_ADRH, regValue);
 	printk("GMAC1_MAC_ADRH -- : 0x%08x\n", sysRegRead(SDM_MAC_ADRH));
-#elif defined (CONFIG_RALINK_RT6855) || defined(CONFIG_RALINK_RT6855A)
-        sysRegWrite(GDMA1_MAC_ADRH, regValue);
-	printk("GMAC1_MAC_ADRH -- : 0x%08x\n", sysRegRead(GDMA1_MAC_ADRH));
-
-	/* To keep the consistence between RT6855 and RT62806, GSW should keep the register. */
-        sysRegWrite(SMACCR1, regValue);
-	printk("SMACCR1 -- : 0x%08x\n", sysRegRead(SMACCR1));
 #elif defined (CONFIG_RALINK_MT7620)
         sysRegWrite(SMACCR1, regValue);
 	printk("SMACCR1 -- : 0x%08x\n", sysRegRead(SMACCR1));
@@ -301,16 +282,9 @@ void ra2880MacAddressSet(unsigned char p[6])
 #endif
 
         regValue = (p[2] << 24) | (p[3] <<16) | (p[4] << 8) | p[5];
-#if defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#if defined (CONFIG_RALINK_MT7628)
         sysRegWrite(SDM_MAC_ADRL, regValue);
 	printk("GMAC1_MAC_ADRL -- : 0x%08x\n", sysRegRead(SDM_MAC_ADRL));	    
-#elif defined (CONFIG_RALINK_RT6855) || defined(CONFIG_RALINK_RT6855A)
-        sysRegWrite(GDMA1_MAC_ADRL, regValue);
-	printk("GMAC1_MAC_ADRL -- : 0x%08x\n", sysRegRead(GDMA1_MAC_ADRL));	    
-
-	/* To keep the consistence between RT6855 and RT62806, GSW should keep the register. */
-        sysRegWrite(SMACCR0, regValue);
-	printk("SMACCR0 -- : 0x%08x\n", sysRegRead(SMACCR0));
 #elif defined (CONFIG_RALINK_MT7620)
         sysRegWrite(SMACCR0, regValue);
 	printk("SMACCR0 -- : 0x%08x\n", sysRegRead(SMACCR0));
@@ -456,7 +430,7 @@ void dump_qos(struct seq_file *s)
 	seq_printf(s, "PSE_FQFC_CFG(0x%08x)  : 0x%08x\n", PSE_FQFC_CFG, sysRegRead(PSE_FQFC_CFG));
 	seq_printf(s, "PSE_IQ_CFG(0x%08x)  : 0x%08x\n", PSE_IQ_CFG, sysRegRead(PSE_IQ_CFG));
 	seq_printf(s, "PSE_QUE_STA(0x%08x)  : 0x%08x\n", PSE_QUE_STA, sysRegRead(PSE_QUE_STA));
-#elif defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#elif defined (CONFIG_RALINK_MT7628)
 
 #else
 	seq_printf(s, "GDMA1_FC_CFG(0x%08x)  : 0x%08x\n", GDMA1_FC_CFG, sysRegRead(GDMA1_FC_CFG));
@@ -556,9 +530,6 @@ void dump_reg(struct seq_file *s)
 	seq_printf(s, "The current PHY address selected by ethtool is %d\n", get_current_phy_address());
 #endif
 
-#if defined (CONFIG_RALINK_RT2883) || defined(CONFIG_RALINK_RT3883)
-	seq_printf(s, "GDMA_RX_FCCNT1(0x%08x)     : 0x%08x\n\n", GDMA_RX_FCCNT1, sysRegRead(GDMA_RX_FCCNT1));	
-#endif
 }
 
 #if 0
@@ -616,9 +587,41 @@ static struct proc_dir_entry *procNumOfTxd, *procTsoLen;
 #if defined(CONFIG_RAETH_LRO)
 static struct proc_dir_entry *procLroStats;
 #endif
+#if defined(CONFIG_RAETH_HW_LRO) || defined (CONFIG_RAETH_MULTIPLE_RX_RING)
+static struct proc_dir_entry *procRxRing1, *procRxRing2, *procRxRing3;
+static struct proc_dir_entry *procHwLroStats, *procHwLroAutoTlb;
+const static HWLRO_DBG_FUNC hw_lro_dbg_func[] =
+{
+    [0] = hwlro_agg_cnt_ctrl,
+    [1] = hwlro_agg_time_ctrl,
+    [2] = hwlro_age_time_ctrl,
+    [3] = hwlro_pkt_int_alpha_ctrl,
+    [4] = hwlro_threshold_ctrl,
+    [5] = hwlro_fix_setting_switch_ctrl,
+    [6] = hwlro_sdl_size_ctrl,
+    [7] = hwlro_ring_enable_ctrl,
+};
+#endif  /* CONFIG_RAETH_HW_LRO */
 #if defined (TASKLET_WORKQUEUE_SW)
 static struct proc_dir_entry *procSCHE;
 #endif
+
+#if defined(CONFIG_RAETH_PDMA_DVT)
+static struct proc_dir_entry *procPdmaDvt;
+
+const static PDMA_DBG_FUNC pdma_dvt_dbg_func[] =
+{
+    [0] = pdma_dvt_show_ctrl,
+    [1] = pdma_dvt_test_rx_ctrl,
+    [2] = pdma_dvt_test_tx_ctrl,
+    [3] = pdma_dvt_test_debug_ctrl,
+    [4] = pdma_dvt_test_lro_ctrl,
+};
+#endif  //#if defined(CONFIG_RAETH_PDMA_DVT)
+
+#if defined(CONFIG_RAETH_INT_DBG)
+static struct proc_dir_entry *procIntDbg;
+#endif  /* CONFIG_RAETH_INT_DBG */
 
 int RegReadMain(struct seq_file *seq, void *v)
 {
@@ -679,12 +682,39 @@ static const struct file_operations skb_free_fops = {
 #if defined (CONFIG_RAETH_QDMA)
 int QDMARead(struct seq_file *seq, void *v)
 {
-	unsigned int i, queue, tx_des_cnt, hw_resv, sw_resv, sch, min_en, min_rate, max_en, max_rate, weight, temp, queue_head, queue_tail;
-	for (queue = 0; queue < 16; queue++){
+	unsigned int temp,i;
+	unsigned int sw_fq, hw_fq;
+	unsigned int min_en, min_rate, max_en, max_rate, sch, weight;
+	unsigned int queue, tx_des_cnt, hw_resv, sw_resv, queue_head, queue_tail;
+	struct net_device *dev = dev_raether;
+        END_DEVICE *ei_local = netdev_priv(dev);
 
-                temp = sysRegRead(QTX_CFG_0 + 0x10 * queue);
+	seq_printf(seq, "==== General Information ====\n");
+	temp = sysRegRead(QDMA_FQ_CNT);
+	sw_fq = (temp&0xFFFF0000)>>16;
+	hw_fq = (temp&0x0000FFFF);
+	seq_printf(seq, "SW TXD: %d/%d; HW TXD: %d/%d\n", sw_fq, NUM_TX_DESC, hw_fq,NUM_QDMA_PAGE);
+	seq_printf(seq, "SW TXD virtual start address: 0x%08x\n", ei_local->txd_pool);
+	seq_printf(seq, "HW TXD virtual start address: 0x%08x\n\n", free_head);
+
+	seq_printf(seq, "==== Scheduler Information ====\n");
+	temp = sysRegRead(QDMA_TX_SCH);
+	max_en = (temp&0x00000800)>>11;
+	max_rate = (temp&0x000007F0)>>4;
+	for(i=0;i<(temp&0x0000000F);i++)
+		max_rate *= 10;
+	seq_printf(seq, "SCH1 rate control:%d. Rate is %dKbps.\n", max_en, max_rate);
+	max_en = (temp&0x08000000)>>27;
+	max_rate = (temp&0x07F00000)>>20;
+	for(i=0;i<(temp&0x000F0000);i++)
+		max_rate *= 10;
+	seq_printf(seq, "SCH2 rate control:%d. Rate is %dKbps.\n\n", max_en, max_rate);
+
+	seq_printf(seq, "==== Physical Queue Information ====\n");
+	for (queue = 0; queue < 16; queue++){
+		temp = sysRegRead(QTX_CFG_0 + 0x10 * queue);
 		tx_des_cnt = (temp & 0xffff0000) >> 16;
-                hw_resv = (temp & 0xff00) >> 8;
+		hw_resv = (temp & 0xff00) >> 8;
 		sw_resv = (temp & 0xff);
 		temp = sysRegRead(QTX_CFG_0 +(0x10 * queue) + 0x4);
 		sch = (temp >> 31) + 1 ;
@@ -692,7 +722,7 @@ int QDMARead(struct seq_file *seq, void *v)
 		min_rate = (temp & 0x7f00000) >> 20;
 		for (i = 0; i< (temp & 0xf0000) >> 16; i++)
 			min_rate *= 10;
-	        max_en = (temp & 0x800) >> 11;
+		max_en = (temp & 0x800) >> 11;
 		max_rate = (temp & 0x7f0) >> 4;
 		for (i = 0; i< (temp & 0xf); i++)
 			max_rate *= 10;
@@ -700,45 +730,50 @@ int QDMARead(struct seq_file *seq, void *v)
 		queue_head = sysRegRead(QTX_HEAD_0 + 0x10 * queue);
 		queue_tail = sysRegRead(QTX_TAIL_0 + 0x10 * queue);
 
-                seq_printf(seq, "Queue#%d Information:\n", queue);
+		seq_printf(seq, "Queue#%d Information:\n", queue);
 		seq_printf(seq, "%d packets in the queue; head address is 0x%08x, tail address is 0x%08x.\n", tx_des_cnt, queue_head, queue_tail);
 		seq_printf(seq, "HW_RESV: %d; SW_RESV: %d; SCH: %d; Weighting: %d\n", hw_resv, sw_resv, sch, weight);
 		seq_printf(seq, "Min_Rate_En is %d, Min_Rate is %dKbps; Max_Rate_En is %d, Max_Rate is %dKbps.\n\n", min_en, min_rate, max_en, max_rate);
-
-/*			while(queue_head != queue_tail){
-				seq_printf(seq, "txd_info1: 0x%08x. txd_info2: 0x%08x. txd_info3: 0x%08x. txd_info4: 0x%08x.\n",
-				sysRegRead(queue_head), sysRegRead(queue_head + 0x04),sysRegRead(queue_head + 0x08),sysRegRead(queue_head + 0x0c));
-				queue_head = sysRegRead(sysRegRead(queue_head + 0x04));
-			}
-*/			
-
-
 	}
-	/* Scheduler Info */
-	temp =  sysRegRead(QDMA_TX_SCH);
-	max_en = (temp & 0x00000800) >> 11;
-	max_rate = (temp & 0x000007f0) >> 4;
-	for (i = 0; i< (temp & 0xf); i++)
-		max_rate *= 10;
-	seq_printf(seq, "SCH1 Information:\n");
-	seq_printf(seq, "RATE_EN is %d; RATE is %dKbps.\n", max_en, max_rate);
-	max_en = (temp & 0x08000000) >> 27;
-	max_rate = (temp & 0x07f00000) >> 20;
-	for (i = 0; i< (temp & 0xf0000) >> 16; i++)
-		max_rate *= 10;
-	seq_printf(seq, "SCH2 Information:\n", i);
-	seq_printf(seq, "RATE_EN is %d; RATE is %dKbps.\n\n", max_en, max_rate);
+#if defined (CONFIG_ARCH_MT7623) && defined(CONFIG_HW_SFQ)
+	seq_printf(seq, "==== Virtual Queue Information ====\n");
+	seq_printf(seq, "VQTX_TB_BASE_0:0x%08x;VQTX_TB_BASE_1:0x%08x;VQTX_TB_BASE_2:0x%08x;VQTX_TB_BASE_3:0x%08x\n", \
+			sfq0, sfq1, sfq2, sfq3);
+	temp = sysRegRead(VQTX_NUM);
+	seq_printf(seq, "VQTX_NUM_0:0x%01x;VQTX_NUM_1:0x%01x;VQTX_NUM_2:0x%01x;VQTX_NUM_3:0x%01x\n\n", \
+			temp&0xF, (temp&0xF0)>>4, (temp&0xF00)>>8, (temp&0xF000)>>12);
 
-	/* General TXD Info */
-	temp = sysRegRead(QDMA_FQ_CNT);
-	seq_printf(seq, "SW TXD: %d/%d; HW TXD: %d/%d\n\n ", temp >> 16, NUM_TX_DESC, temp & 0xffff, NUM_QDMA_PAGE);
-	
-	seq_printf(seq, "skb-> mark to queue mapping(skb->mark, queue): \n");
+#endif
+
+	seq_printf(seq, "==== Flow Control Information ====\n");
+	temp = sysRegRead(QDMA_FC_THRES);
+	seq_printf(seq, "SW_DROP_EN:%x; SW_DROP_FFA:%d; SW_DROP_MODE:%d\n", \
+			(temp&0x1000000)>>24, (temp&0x200000)>>25, (temp&0x30000000)>>28);
+	seq_printf(seq, "WH_DROP_EN:%x; HW_DROP_FFA:%d; HW_DROP_MODE:%d\n", \
+			(temp&0x10000)>>16, (temp&0x2000)>>17, (temp&0x300000)>>20);
+#if defined (CONFIG_ARCH_MT7623)
+	seq_printf(seq, "SW_DROP_FSTVQ_MODE:%d;SW_DROP_FSTVQ:%d\n", \
+			(temp&0xC0000000)>>30, (temp&0x08000000)>>27);
+	seq_printf(seq, "HW_DROP_FSTVQ_MODE:%d;HW_DROP_FSTVQ:%d\n", \
+			(temp&0xC00000)>>22, (temp&0x080000)>>19);
+#endif
+
+	seq_printf(seq, "\n==== FSM Information\n");
+	temp = sysRegRead(QDMA_DMA);
+#if defined (CONFIG_ARCH_MT7623)
+	seq_printf(seq, "VQTB_FSM:0x%01x\n", (temp&0x0F000000)>>24);
+#endif
+	seq_printf(seq, "FQ_FSM:0x%01x\n", (temp&0x000F0000)>>16);
+	seq_printf(seq, "TX_FSM:0x%01x\n", (temp&0x00000F00)>>12);
+	seq_printf(seq, "RX_FSM:0x%01x\n\n", (temp&0x0000000f));
+
+	seq_printf(seq, "==== M2Q Information ====\n");
 	for (i = 0; i < 64; i+=8){
-		seq_printf(seq, " (%d,%d)(%d,%d)(%d,%d)(%d,%d)(%d,%d)(%d,%d)(%d,%d)(%d,%d)\n", 
-				i, M2Q_table[i], i+1, M2Q_table[i+1], i+2, M2Q_table[i+2], i+3, M2Q_table[i+3], 
+		seq_printf(seq, " (%d,%d)(%d,%d)(%d,%d)(%d,%d)(%d,%d)(%d,%d)(%d,%d)(%d,%d)\n",
+				i, M2Q_table[i], i+1, M2Q_table[i+1], i+2, M2Q_table[i+2], i+3, M2Q_table[i+3],
 				i+4, M2Q_table[i+4], i+5, M2Q_table[i+5], i+6, M2Q_table[i+6], i+7, M2Q_table[i+7]);
 	}
+
 	return 0;
 
 }
@@ -852,6 +887,103 @@ static const struct file_operations rx_ring_fops = {
 	.llseek	 	= seq_lseek,
 	.release 	= single_release
 };
+
+#if defined(CONFIG_RAETH_HW_LRO) || defined (CONFIG_RAETH_MULTIPLE_RX_RING)
+int RxLRORingRead(struct seq_file *seq, void *v, struct PDMA_rxdesc *rx_ring_p)
+{
+	struct PDMA_rxdesc *rx_ring;
+	int i = 0;
+
+	rx_ring = kmalloc(sizeof(struct PDMA_rxdesc) * NUM_LRO_RX_DESC, GFP_KERNEL);
+	if(rx_ring==NULL){
+		seq_printf(seq, " allocate temp rx_ring fail.\n");
+		return 0;
+	}
+
+	for (i=0; i < NUM_LRO_RX_DESC; i++) {
+		memcpy(&rx_ring[i], &rx_ring_p[i], sizeof(struct PDMA_rxdesc));
+	}
+	
+	for (i=0; i < NUM_LRO_RX_DESC; i++) {
+#ifdef CONFIG_32B_DESC
+		seq_printf(seq, "%d: %08x %08x %08x %08x %08x %08x %08x %08x\n",i,  *(int *)&rx_ring[i].rxd_info1,
+				*(int *)&rx_ring[i].rxd_info2, *(int *)&rx_ring[i].rxd_info3,
+				*(int *)&rx_ring[i].rxd_info4, *(int *)&rx_ring[i].rxd_info5,
+				*(int *)&rx_ring[i].rxd_info6, *(int *)&rx_ring[i].rxd_info7,
+				*(int *)&rx_ring[i].rxd_info8);
+#else
+		seq_printf(seq, "%d: %08x %08x %08x %08x\n",i,  *(int *)&rx_ring[i].rxd_info1, *(int *)&rx_ring[i].rxd_info2, 
+				*(int *)&rx_ring[i].rxd_info3, *(int *)&rx_ring[i].rxd_info4);
+#endif
+    }
+
+	kfree(rx_ring);
+	return 0;
+}
+
+int RxRing1Read(struct seq_file *seq, void *v)
+{
+	END_DEVICE *ei_local = netdev_priv(dev_raether);
+    RxLRORingRead(seq, v, ei_local->rx_ring1);
+
+    return 0;
+}
+
+int RxRing2Read(struct seq_file *seq, void *v)
+{
+	END_DEVICE *ei_local = netdev_priv(dev_raether);
+    RxLRORingRead(seq, v, ei_local->rx_ring2);
+
+    return 0;
+}
+
+int RxRing3Read(struct seq_file *seq, void *v)
+{
+	END_DEVICE *ei_local = netdev_priv(dev_raether);
+    RxLRORingRead(seq, v, ei_local->rx_ring3);
+
+    return 0;
+}
+
+static int rx_ring1_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, RxRing1Read, NULL);
+}
+
+static int rx_ring2_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, RxRing2Read, NULL);
+}
+
+static int rx_ring3_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, RxRing3Read, NULL);
+}
+
+static const struct file_operations rx_ring1_fops = {
+	.owner 		= THIS_MODULE,
+	.open	 	= rx_ring1_open,
+	.read	 	= seq_read,
+	.llseek	 	= seq_lseek,
+	.release 	= single_release
+};
+
+static const struct file_operations rx_ring2_fops = {
+	.owner 		= THIS_MODULE,
+	.open	 	= rx_ring2_open,
+	.read	 	= seq_read,
+	.llseek	 	= seq_lseek,
+	.release 	= single_release
+};
+
+static const struct file_operations rx_ring3_fops = {
+	.owner 		= THIS_MODULE,
+	.open	 	= rx_ring3_open,
+	.read	 	= seq_read,
+	.llseek	 	= seq_lseek,
+	.release 	= single_release
+};
+#endif  /* CONFIG_RAETH_HW_LRO */
 
 #if defined(CONFIG_RAETH_TSO)
 
@@ -1187,6 +1319,21 @@ int LroStatsRead(struct seq_file *seq, void *v)
 	return 0;
 }
 
+static int lro_stats_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, LroStatsRead, NULL);
+}
+
+static struct file_operations lro_stats_fops = {
+	.owner 		= THIS_MODULE,
+	.open	 	= lro_stats_open,
+	.read	 	= seq_read,
+	.llseek	 	= seq_lseek,
+	.write		= LroStatsWrite,
+	.release 	= single_release
+};
+#endif
+
 int getnext(const char *src, int separator, char *dest)
 {
     char *c;
@@ -1227,20 +1374,444 @@ int str_to_ip(unsigned int *ip, const char *str)
     return 0;
 }
 
-static int lro_stats_open(struct inode *inode, struct file *file)
+#if defined(CONFIG_RAETH_HW_LRO)
+static int HwLroLenUpdate(unsigned int agg_size)
 {
-	return single_open(file, LroStatsRead, NULL);
+	int len_idx;
+
+	if(agg_size > 65000) {
+		len_idx = 13;
+	}else if(agg_size > 60000) {
+		len_idx = 12;
+	}else if(agg_size > 55000) {
+		len_idx = 11;
+	}else if(agg_size > 50000) {
+		len_idx = 10;
+	}else if(agg_size > 45000) {
+		len_idx = 9;
+	}else if(agg_size > 40000) {
+		len_idx = 8;
+	}else if(agg_size > 35000) {
+		len_idx = 7;
+	}else if(agg_size > 30000) {
+		len_idx = 6;
+	}else if(agg_size > 25000) {
+		len_idx = 5;
+	}else if(agg_size > 20000) {
+		len_idx = 4;
+	}else if(agg_size > 15000) {
+		len_idx = 3;
+	}else if(agg_size > 10000) {
+		len_idx = 2;
+	}else if(agg_size > 5000) {
+		len_idx = 1;
+	}else {
+		len_idx = 0;
+	}
+
+	return len_idx;
 }
 
-static struct file_operations lro_stats_fops = {
+int HwLroStatsUpdate(unsigned int ring_num, unsigned int agg_cnt, unsigned int agg_size)
+{
+    if( (ring_num > 0) && (ring_num < 4) )
+    {
+        hw_lro_agg_size_cnt[ring_num-1][HwLroLenUpdate(agg_size)]++;
+        hw_lro_agg_num_cnt[ring_num-1][agg_cnt]++;
+        hw_lro_tot_flush_cnt[ring_num-1]++;
+        hw_lro_tot_agg_cnt[ring_num-1] += agg_cnt;
+    }
+
+    return 0;
+}
+
+#if defined(CONFIG_RAETH_HW_LRO_REASON_DBG)
+int HwLroFlushStatsUpdate(unsigned int ring_num, unsigned int flush_reason)
+{
+    if( (ring_num > 0) && (ring_num < 4) )
+    {
+#if 1
+        if ( (flush_reason & 0x7) == HW_LRO_AGG_FLUSH )
+            hw_lro_agg_flush_cnt[ring_num-1]++;
+        else if ( (flush_reason & 0x7) == HW_LRO_AGE_FLUSH )
+            hw_lro_age_flush_cnt[ring_num-1]++;
+        else if ( (flush_reason & 0x7) == HW_LRO_NOT_IN_SEQ_FLUSH )
+            hw_lro_seq_flush_cnt[ring_num-1]++;
+        else if ( (flush_reason & 0x7) == HW_LRO_TIMESTAMP_FLUSH )
+            hw_lro_timestamp_flush_cnt[ring_num-1]++;
+        else if ( (flush_reason & 0x7) == HW_LRO_NON_RULE_FLUSH )
+            hw_lro_norule_flush_cnt[ring_num-1]++;
+#else
+        if ( flush_reason & BIT(4) )
+            hw_lro_agg_flush_cnt[ring_num-1]++;
+        else if ( flush_reason & BIT(3) )
+            hw_lro_age_flush_cnt[ring_num-1]++;
+        else if ( flush_reason & BIT(2) )
+            hw_lro_seq_flush_cnt[ring_num-1]++;
+        else if ( flush_reason & BIT(1) )
+            hw_lro_timestamp_flush_cnt[ring_num-1]++;
+        else if ( flush_reason & BIT(0) )
+            hw_lro_norule_flush_cnt[ring_num-1]++;
+#endif
+    }
+
+    return 0;
+}
+#endif  /* CONFIG_RAETH_HW_LRO_REASON_DBG */
+
+ssize_t HwLroStatsWrite(struct file *file, const char __user *buffer, 
+		      size_t count, loff_t *data)
+{
+    memset(hw_lro_agg_num_cnt, 0, sizeof(hw_lro_agg_num_cnt));
+    memset(hw_lro_agg_size_cnt, 0, sizeof(hw_lro_agg_size_cnt));
+    memset(hw_lro_tot_agg_cnt, 0, sizeof(hw_lro_tot_agg_cnt));
+    memset(hw_lro_tot_flush_cnt, 0, sizeof(hw_lro_tot_flush_cnt));
+#if defined(CONFIG_RAETH_HW_LRO_REASON_DBG)
+    memset(hw_lro_agg_flush_cnt, 0, sizeof(hw_lro_agg_flush_cnt));
+    memset(hw_lro_age_flush_cnt, 0, sizeof(hw_lro_age_flush_cnt));
+    memset(hw_lro_seq_flush_cnt, 0, sizeof(hw_lro_seq_flush_cnt));
+    memset(hw_lro_timestamp_flush_cnt, 0, sizeof(hw_lro_timestamp_flush_cnt));
+    memset(hw_lro_norule_flush_cnt, 0, sizeof(hw_lro_norule_flush_cnt));
+#endif  /* CONFIG_RAETH_HW_LRO_REASON_DBG */
+
+    printk("clear hw lro cnt table\n");
+
+	return count;
+}
+
+int HwLroStatsRead(struct seq_file *seq, void *v)
+{
+	int i;
+	
+	seq_printf(seq, "HW LRO statistic dump:\n");
+
+    /* Agg number count */
+	seq_printf(seq, "Cnt:   RING1 | RING2 | RING3 | Total\n");
+	for(i=0; i<=MAX_HW_LRO_AGGR; i++) {
+		seq_printf(seq, " %d :      %d        %d        %d        %d\n", 
+            i, hw_lro_agg_num_cnt[0][i], hw_lro_agg_num_cnt[1][i], hw_lro_agg_num_cnt[2][i],
+            hw_lro_agg_num_cnt[0][i]+hw_lro_agg_num_cnt[1][i]+hw_lro_agg_num_cnt[2][i]);
+	}
+
+    /* Total agg count */
+    seq_printf(seq, "Total agg:   RING1 | RING2 | RING3 | Total\n");
+    seq_printf(seq, "                %d      %d      %d      %d\n", 
+        hw_lro_tot_agg_cnt[0], hw_lro_tot_agg_cnt[1], hw_lro_tot_agg_cnt[2],
+        hw_lro_tot_agg_cnt[0]+hw_lro_tot_agg_cnt[1]+hw_lro_tot_agg_cnt[2]);
+
+    /* Total flush count */
+    seq_printf(seq, "Total flush:   RING1 | RING2 | RING3 | Total\n");
+    seq_printf(seq, "                %d      %d      %d      %d\n", 
+        hw_lro_tot_flush_cnt[0], hw_lro_tot_flush_cnt[1], hw_lro_tot_flush_cnt[2],
+        hw_lro_tot_flush_cnt[0]+hw_lro_tot_flush_cnt[1]+hw_lro_tot_flush_cnt[2]);
+
+    /* Avg agg count */
+    seq_printf(seq, "Avg agg:   RING1 | RING2 | RING3 | Total\n");
+    seq_printf(seq, "                %d      %d      %d      %d\n", 
+        (hw_lro_tot_flush_cnt[0]) ? hw_lro_tot_agg_cnt[0]/hw_lro_tot_flush_cnt[0] : 0,
+        (hw_lro_tot_flush_cnt[1]) ? hw_lro_tot_agg_cnt[1]/hw_lro_tot_flush_cnt[1] : 0,
+        (hw_lro_tot_flush_cnt[2]) ? hw_lro_tot_agg_cnt[2]/hw_lro_tot_flush_cnt[2] : 0,
+        (hw_lro_tot_flush_cnt[0]+hw_lro_tot_flush_cnt[1]+hw_lro_tot_flush_cnt[2]) ? \
+        ((hw_lro_tot_agg_cnt[0]+hw_lro_tot_agg_cnt[1]+hw_lro_tot_agg_cnt[2])/(hw_lro_tot_flush_cnt[0]+hw_lro_tot_flush_cnt[1]+hw_lro_tot_flush_cnt[2])) : 0
+    );
+
+    /*  Statistics of aggregation size counts */
+	seq_printf(seq, "HW LRO flush pkt len:\n");
+	seq_printf(seq, " Length  | RING1  | RING2  | RING3  | Total\n");
+	for(i=0; i<15; i++) {
+		seq_printf(seq, "%d~%d: %d      %d      %d      %d\n", i*5000, (i+1)*5000, 
+            hw_lro_agg_size_cnt[0][i], hw_lro_agg_size_cnt[1][i], hw_lro_agg_size_cnt[2][i],
+            hw_lro_agg_size_cnt[0][i]+hw_lro_agg_size_cnt[1][i]+hw_lro_agg_size_cnt[2][i]);
+	}
+#if defined(CONFIG_RAETH_HW_LRO_REASON_DBG)
+    seq_printf(seq, "Flush reason:   RING1 | RING2 | RING3 | Total\n");
+    seq_printf(seq, "AGG timeout:      %d      %d      %d      %d\n", 
+        hw_lro_agg_flush_cnt[0], hw_lro_agg_flush_cnt[1], hw_lro_agg_flush_cnt[2],
+        (hw_lro_agg_flush_cnt[0]+hw_lro_agg_flush_cnt[1]+hw_lro_agg_flush_cnt[2])
+    );
+    seq_printf(seq, "AGE timeout:      %d      %d      %d      %d\n", 
+        hw_lro_age_flush_cnt[0], hw_lro_age_flush_cnt[1], hw_lro_age_flush_cnt[2],
+        (hw_lro_age_flush_cnt[0]+hw_lro_age_flush_cnt[1]+hw_lro_age_flush_cnt[2])
+    );
+    seq_printf(seq, "Not in-sequence:  %d      %d      %d      %d\n", 
+        hw_lro_seq_flush_cnt[0], hw_lro_seq_flush_cnt[1], hw_lro_seq_flush_cnt[2],
+        (hw_lro_seq_flush_cnt[0]+hw_lro_seq_flush_cnt[1]+hw_lro_seq_flush_cnt[2])
+    );
+    seq_printf(seq, "Timestamp:        %d      %d      %d      %d\n", 
+        hw_lro_timestamp_flush_cnt[0], hw_lro_timestamp_flush_cnt[1], hw_lro_timestamp_flush_cnt[2],
+        (hw_lro_timestamp_flush_cnt[0]+hw_lro_timestamp_flush_cnt[1]+hw_lro_timestamp_flush_cnt[2])
+    );
+    seq_printf(seq, "No LRO rule:      %d      %d      %d      %d\n", 
+        hw_lro_norule_flush_cnt[0], hw_lro_norule_flush_cnt[1], hw_lro_norule_flush_cnt[2],
+        (hw_lro_norule_flush_cnt[0]+hw_lro_norule_flush_cnt[1]+hw_lro_norule_flush_cnt[2])
+    );
+#endif  /* CONFIG_RAETH_HW_LRO_REASON_DBG */
+    
+	return 0;
+}
+
+static int hw_lro_stats_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, HwLroStatsRead, NULL);
+}
+
+static struct file_operations hw_lro_stats_fops = {
 	.owner 		= THIS_MODULE,
-	.open	 	= lro_stats_open,
+	.open	 	= hw_lro_stats_open,
 	.read	 	= seq_read,
 	.llseek	 	= seq_lseek,
-	.write		= LroStatsWrite,
+	.write		= HwLroStatsWrite,
 	.release 	= single_release
 };
-#endif
+
+int hwlro_agg_cnt_ctrl(int par1, int par2)
+{
+    SET_PDMA_RXRING_MAX_AGG_CNT(ADMA_RX_RING1, par2);
+    SET_PDMA_RXRING_MAX_AGG_CNT(ADMA_RX_RING2, par2);
+    SET_PDMA_RXRING_MAX_AGG_CNT(ADMA_RX_RING3, par2);
+    return 0;
+}
+
+int hwlro_agg_time_ctrl(int par1, int par2)
+{
+    SET_PDMA_RXRING_AGG_TIME(ADMA_RX_RING1, par2);
+    SET_PDMA_RXRING_AGG_TIME(ADMA_RX_RING2, par2);
+    SET_PDMA_RXRING_AGG_TIME(ADMA_RX_RING3, par2);
+    return 0;
+}
+
+int hwlro_age_time_ctrl(int par1, int par2)
+{
+    SET_PDMA_RXRING_AGE_TIME(ADMA_RX_RING1, par2);
+    SET_PDMA_RXRING_AGE_TIME(ADMA_RX_RING2, par2);
+    SET_PDMA_RXRING_AGE_TIME(ADMA_RX_RING3, par2);
+    return 0;
+}
+
+int hwlro_pkt_int_alpha_ctrl(int par1, int par2)
+{
+    END_DEVICE *ei_local = netdev_priv(dev_raether);
+
+    ei_local->hw_lro_alpha = par2;
+    printk("[hwlro_pkt_int_alpha_ctrl]ei_local->hw_lro_alpha = %d\n", ei_local->hw_lro_alpha);
+
+    return 0;
+}
+
+int hwlro_threshold_ctrl(int par1, int par2)
+{
+    /* bandwidth threshold setting */
+    SET_PDMA_LRO_BW_THRESHOLD(par2);
+    return 0;
+}
+
+int hwlro_fix_setting_switch_ctrl(int par1, int par2)
+{
+#if defined (CONFIG_RAETH_HW_LRO_AUTO_ADJ_DBG)
+    END_DEVICE *ei_local = netdev_priv(dev_raether);
+
+    ei_local->hw_lro_fix_setting = par2;
+    printk("[hwlro_pkt_int_alpha_ctrl]ei_local->hw_lro_fix_setting = %d\n", ei_local->hw_lro_fix_setting);
+#endif  /* CONFIG_RAETH_HW_LRO_AUTO_ADJ_DBG */
+
+    return 0;
+}
+
+int hwlro_sdl_size_ctrl(int par1, int par2)
+{
+    END_DEVICE *ei_local = netdev_priv(dev_raether);
+
+    ei_local->hw_lro_sdl_size = par2;
+    printk("[hwlro_sdl_size_ctrl]ei_local->hw_lro_sdl_size = %d\n", ei_local->hw_lro_sdl_size);
+
+    return 0;
+}
+
+int hwlro_ring_enable_ctrl(int par1, int par2)
+{
+	if(!par2){
+		printk("[hwlro_ring_enable_ctrl]Disable HW LRO rings\n");
+		SET_PDMA_RXRING_VALID(ADMA_RX_RING0,0);
+		SET_PDMA_RXRING_VALID(ADMA_RX_RING1,0);
+		SET_PDMA_RXRING_VALID(ADMA_RX_RING2,0);
+		SET_PDMA_RXRING_VALID(ADMA_RX_RING3,0);
+	} else {
+		printk("[hwlro_ring_enable_ctrl]Enable HW LRO rings\n");
+		SET_PDMA_RXRING_VALID(ADMA_RX_RING0,1);
+		SET_PDMA_RXRING_VALID(ADMA_RX_RING1,1);
+		SET_PDMA_RXRING_VALID(ADMA_RX_RING2,1);
+		SET_PDMA_RXRING_VALID(ADMA_RX_RING3,1);
+	}
+	
+	return 0;
+}
+
+ssize_t HwLroAutoTlbWrite(struct file *file, const char __user *buffer, 
+		      size_t count, loff_t *data)
+{
+    char buf[32];
+    char *pBuf;
+    int len = count;
+    int x = 0,y = 0;
+    char *pToken = NULL;
+    char *pDelimiter = " \t";
+
+    printk("[HwLroAutoTlbWrite]Usage:\n echo [function] [setting] > /proc/mt76xx/hw_lro_auto_tlb\n");
+    printk("Functions:\n");
+    printk("[0] = hwlro_agg_cnt_ctrl\n");
+    printk("[1] = hwlro_agg_time_ctrl\n");
+    printk("[2] = hwlro_age_time_ctrl\n");
+    printk("[3] = hwlro_pkt_int_alpha_ctrl\n");
+    printk("[4] = hwlro_threshold_ctrl\n");
+    printk("[5] = hwlro_fix_setting_switch_ctrl\n");
+    printk("[6] = hwlro_sdl_size_ctrl\n");
+    printk("[7] = hwlro_ring_enable_ctrl\n");
+
+    printk("[HwLroAutoTlbWrite]write parameter len = %d\n\r", (int)len);
+    if(len >= sizeof(buf)){
+        printk("input handling fail!\n");
+        len = sizeof(buf) - 1;
+        return -1;
+    }
+    
+    if(copy_from_user(buf, buffer, len)){
+        return -EFAULT;
+    }
+    buf[len] = '\0';
+    printk("[HwLroAutoTlbWrite]write parameter data = %s\n\r", buf);
+
+    pBuf = buf;
+    pToken = strsep(&pBuf, pDelimiter);
+    x = NULL != pToken ? simple_strtol(pToken, NULL, 10) : 0;
+
+    pToken = strsep(&pBuf, "\t\n ");
+    if(pToken != NULL){
+        y = NULL != pToken ? simple_strtol(pToken, NULL, 10) : 0;
+        printk("y = %d \n\r", y);
+    }
+
+    if ( (sizeof(hw_lro_dbg_func)/sizeof(hw_lro_dbg_func[0]) > x) && NULL != hw_lro_dbg_func[x])
+    {
+        (*hw_lro_dbg_func[x])(x, y);
+    }
+
+	return count;
+}
+
+void HwLroAutoTlbDump(struct seq_file *seq, unsigned int index)
+{
+    int i;
+    struct PDMA_LRO_AUTO_TLB_INFO   pdma_lro_auto_tlb;
+    unsigned int tlb_info[9];
+    unsigned int dw_len, cnt, priority;
+    unsigned int entry;
+
+    if( index > 4 )
+        index = index - 1;
+    entry = (index * 9) + 1;
+
+    /* read valid entries of the auto-learn table */
+    sysRegWrite( PDMA_FE_ALT_CF8, entry );
+
+    //seq_printf(seq, "\nEntry = %d\n", entry);
+    for(i=0; i<9; i++){
+        tlb_info[i] = sysRegRead(PDMA_FE_ALT_SEQ_CFC);
+        //seq_printf(seq, "tlb_info[%d] = 0x%x\n", i, tlb_info[i]);
+    }
+    memcpy(&pdma_lro_auto_tlb, tlb_info, sizeof(struct PDMA_LRO_AUTO_TLB_INFO));
+
+    dw_len = pdma_lro_auto_tlb.auto_tlb_info7.DW_LEN;
+    cnt = pdma_lro_auto_tlb.auto_tlb_info6.CNT;
+
+    if ( sysRegRead(ADMA_LRO_CTRL_DW0) & PDMA_LRO_ALT_SCORE_MODE )  /* packet count */
+        priority = cnt;
+    else    /* byte count */
+        priority = dw_len;
+
+    /* dump valid entries of the auto-learn table */
+    if( index >= 4 )
+        seq_printf(seq, "\n===== TABLE Entry: %d (Act) =====\n", index);
+    else
+        seq_printf(seq, "\n===== TABLE Entry: %d (LRU) =====\n", index);
+    if( pdma_lro_auto_tlb.auto_tlb_info8.IPV4 ){
+        seq_printf(seq, "SIP = 0x%x:0x%x:0x%x:0x%x (IPv4)\n", 
+            pdma_lro_auto_tlb.auto_tlb_info4.SIP3,
+            pdma_lro_auto_tlb.auto_tlb_info3.SIP2,
+            pdma_lro_auto_tlb.auto_tlb_info2.SIP1,
+            pdma_lro_auto_tlb.auto_tlb_info1.SIP0);
+    }
+    else{        
+        seq_printf(seq, "SIP = 0x%x:0x%x:0x%x:0x%x (IPv6)\n", 
+            pdma_lro_auto_tlb.auto_tlb_info4.SIP3,
+            pdma_lro_auto_tlb.auto_tlb_info3.SIP2,
+            pdma_lro_auto_tlb.auto_tlb_info2.SIP1,
+            pdma_lro_auto_tlb.auto_tlb_info1.SIP0);
+    }
+    seq_printf(seq, "DIP_ID = %d\n", pdma_lro_auto_tlb.auto_tlb_info8.DIP_ID);
+    seq_printf(seq, "TCP SPORT = %d | TCP DPORT = %d\n", 
+        pdma_lro_auto_tlb.auto_tlb_info0.STP, 
+        pdma_lro_auto_tlb.auto_tlb_info0.DTP);
+    seq_printf(seq, "VLAN1 = %d | VLAN2 = %d | VLAN3 = %d | VLAN4 =%d \n", 
+        pdma_lro_auto_tlb.auto_tlb_info5.VLAN_VID0,
+        (pdma_lro_auto_tlb.auto_tlb_info5.VLAN_VID0 << 12),
+        (pdma_lro_auto_tlb.auto_tlb_info5.VLAN_VID0 << 24),
+        pdma_lro_auto_tlb.auto_tlb_info6.VLAN_VID1);
+    seq_printf(seq, "TPUT = %d | FREQ = %d\n", dw_len, cnt);
+    seq_printf(seq, "PRIORITY = %d\n", priority);
+}
+
+int HwLroAutoTlbRead(struct seq_file *seq, void *v)
+{
+	int i;
+    unsigned int regVal;
+    unsigned int regOp1, regOp2, regOp3, regOp4;
+    unsigned int agg_cnt, agg_time, age_time;
+    END_DEVICE *ei_local = netdev_priv(dev_raether);
+
+    /* Read valid entries of the auto-learn table */
+    sysRegWrite(PDMA_FE_ALT_CF8, 0);
+    regVal = sysRegRead(PDMA_FE_ALT_SEQ_CFC);
+
+    seq_printf(seq, "HW LRO Auto-learn Table: (PDMA_LRO_ALT_CFC_RSEQ_DBG=0x%x)\n", regVal);
+
+    for(i = 7; i >= 0; i--)
+    {
+        if( regVal & (1 << i) )
+            HwLroAutoTlbDump(seq, i);
+    }
+    
+    /* Read the agg_time/age_time/agg_cnt of LRO rings */
+    seq_printf(seq, "\nHW LRO Ring Settings\n");
+    for(i = 1; i <= 3; i++) 
+    {
+        regOp1 = sysRegRead( LRO_RX_RING0_CTRL_DW1 + (i * 0x40) );
+        regOp2 = sysRegRead( LRO_RX_RING0_CTRL_DW2 + (i * 0x40) );
+        regOp3 = sysRegRead( LRO_RX_RING0_CTRL_DW3 + (i * 0x40) );
+        regOp4 = sysRegRead( ADMA_LRO_CTRL_DW2 );
+        agg_cnt = ((regOp3 & 0x03) << PDMA_LRO_AGG_CNT_H_OFFSET) | ((regOp2 >> PDMA_LRO_RING_AGG_CNT1_OFFSET) & 0x3f);
+        agg_time = (regOp2 >> PDMA_LRO_RING_AGG_OFFSET) & 0xffff;
+        age_time = ((regOp2 & 0x03f) << PDMA_LRO_AGE_H_OFFSET) | ((regOp1 >> PDMA_LRO_RING_AGE1_OFFSET) & 0x3ff);
+        seq_printf(seq, "Ring[%d]: SDL=%d, MAX_AGG_CNT=%d, AGG_TIME=%d, AGE_TIME=%d, Threshold=%d\n", 
+            i, ei_local->hw_lro_sdl_size, agg_cnt, agg_time, age_time, regOp4);
+    }
+
+	return 0;
+}
+
+static int hw_lro_auto_tlb_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, HwLroAutoTlbRead, NULL);
+}
+
+static struct file_operations hw_lro_auto_tlb_fops = {
+	.owner 		= THIS_MODULE,
+	.open	 	= hw_lro_auto_tlb_open,
+	.read	 	= seq_read,
+	.llseek	 	= seq_lseek,
+	.write		= HwLroAutoTlbWrite,
+	.release 	= single_release
+};
+#endif  /* CONFIG_RAETH_HW_LRO */
 
 #if defined (CONFIG_MIPS)
 int CP0RegRead(struct seq_file *seq, void *v)
@@ -1326,13 +1897,13 @@ static struct proc_dir_entry *procEswCnt;
 
 int EswCntRead(struct seq_file *seq, void *v)
 {
-#if defined (CONFIG_RALINK_MT7621)
-	int pkt_cnt = 0;
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_P5_RGMII_TO_MT7530_MODE) || defined (CONFIG_ARCH_MT7623)
+	unsigned int pkt_cnt = 0;
 	int i = 0;
 #endif
 	seq_printf(seq, "\n		  <<CPU>>			 \n");
 	seq_printf(seq, "		    |				 \n");
-#if defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#if defined (CONFIG_RALINK_MT7628)
 	seq_printf(seq, "+-----------------------------------------------+\n");
 	seq_printf(seq, "|		  <<PDMA>>		        |\n");
 	seq_printf(seq, "+-----------------------------------------------+\n");
@@ -1368,7 +1939,7 @@ int EswCntRead(struct seq_file *seq, void *v)
 	seq_printf(seq, "| GDMA2_RX_LERCNT : %010u (too long)	|\n", sysRegRead(RALINK_FRAME_ENGINE_BASE+0x1374));	
 	seq_printf(seq, "| GDMA2_RX_CERCNT : %010u (l3/l4 checksum) |\n", sysRegRead(RALINK_FRAME_ENGINE_BASE+0x1378));	
 	seq_printf(seq, "| GDMA2_RX_FCCNT  : %010u (flow control)	|\n", sysRegRead(RALINK_FRAME_ENGINE_BASE+0x137c));	
-#elif defined (CONFIG_RALINK_MT7621)
+#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 	seq_printf(seq, "| GDMA1_RX_GBCNT  : %010u (Rx Good Bytes)	|\n", sysRegRead(RALINK_FRAME_ENGINE_BASE+0x2400));	
 	seq_printf(seq, "| GDMA1_RX_GPCNT  : %010u (Rx Good Pkts)	|\n", sysRegRead(RALINK_FRAME_ENGINE_BASE+0x2408));	
 	seq_printf(seq, "| GDMA1_RX_OERCNT : %010u (overflow error)	|\n", sysRegRead(RALINK_FRAME_ENGINE_BASE+0x2410));	
@@ -1415,15 +1986,15 @@ int EswCntRead(struct seq_file *seq, void *v)
     defined (CONFIG_RALINK_MT7620)
 
 	seq_printf(seq, "                      ^                          \n");
-	seq_printf(seq, "                      | Port6 Rx:%010u Good Pkt   \n", ((p6_rx_good_cnt << 16) | sysRegRead(RALINK_ETH_SW_BASE+0x4620)&0xFFFF));
+	seq_printf(seq, "                      | Port6 Rx:%010u Good Pkt   \n", ((p6_rx_good_cnt << 16) | (sysRegRead(RALINK_ETH_SW_BASE+0x4620)&0xFFFF)));
 	seq_printf(seq, "                      | Port6 Rx:%010u Bad Pkt    \n", sysRegRead(RALINK_ETH_SW_BASE+0x4620)>>16);
-	seq_printf(seq, "                      | Port6 Tx:%010u Good Pkt   \n", ((p6_tx_good_cnt << 16) | sysRegRead(RALINK_ETH_SW_BASE+0x4610)&0xFFFF));
+	seq_printf(seq, "                      | Port6 Tx:%010u Good Pkt   \n", ((p6_tx_good_cnt << 16) | (sysRegRead(RALINK_ETH_SW_BASE+0x4610)&0xFFFF)));
 	seq_printf(seq, "                      | Port6 Tx:%010u Bad Pkt    \n", sysRegRead(RALINK_ETH_SW_BASE+0x4610)>>16);
 #if defined (CONFIG_RALINK_MT7620)
 
-	seq_printf(seq, "                      | Port7 Rx:%010u Good Pkt   \n", ((p7_rx_good_cnt << 16) | sysRegRead(RALINK_ETH_SW_BASE+0x4720)&0xFFFF));
+	seq_printf(seq, "                      | Port7 Rx:%010u Good Pkt   \n", ((p7_rx_good_cnt << 16) | (sysRegRead(RALINK_ETH_SW_BASE+0x4720)&0xFFFF)));
 	seq_printf(seq, "                      | Port7 Rx:%010u Bad Pkt    \n", sysRegRead(RALINK_ETH_SW_BASE+0x4720)>>16);
-	seq_printf(seq, "                      | Port7 Tx:%010u Good Pkt   \n", ((p7_tx_good_cnt << 16) | sysRegRead(RALINK_ETH_SW_BASE+0x4710)&0xFFFF));
+	seq_printf(seq, "                      | Port7 Tx:%010u Good Pkt   \n", ((p7_tx_good_cnt << 16) | (sysRegRead(RALINK_ETH_SW_BASE+0x4710)&0xFFFF)));
 	seq_printf(seq, "                      | Port7 Tx:%010u Bad Pkt    \n", sysRegRead(RALINK_ETH_SW_BASE+0x4710)>>16);
 #endif
 	seq_printf(seq, "+---------------------v-------------------------+\n");
@@ -1432,7 +2003,7 @@ int EswCntRead(struct seq_file *seq, void *v)
 	seq_printf(seq, "|     P0    P1    P2     P3     P4     P5       |\n");
 	seq_printf(seq, "+-----------------------------------------------+\n");
 	seq_printf(seq, "       |     |     |     |       |      |        \n");
-#elif defined (CONFIG_RALINK_RT3883) || defined (CONFIG_RALINK_MT7621) 
+#elif defined (CONFIG_RALINK_RT3883) || defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623) 
 	/* no built-in switch */
 #else
 	seq_printf(seq, "                      ^                          \n");
@@ -1449,17 +2020,17 @@ int EswCntRead(struct seq_file *seq, void *v)
 #if defined (CONFIG_RALINK_RT6855) || defined(CONFIG_RALINK_RT6855A) || \
     defined (CONFIG_RALINK_MT7620)
 
-	seq_printf(seq, "Port0 Good RX=%010u Tx=%010u (Bad Rx=%010u Tx=%010u)\n", ((p0_rx_good_cnt << 16) | sysRegRead(RALINK_ETH_SW_BASE+0x4020)&0xFFFF), ((p0_tx_good_cnt << 16)|sysRegRead(RALINK_ETH_SW_BASE+0x4010)&0xFFFF), sysRegRead(RALINK_ETH_SW_BASE+0x4020)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x4010)>>16);
+	seq_printf(seq, "Port0 Good RX=%010u Tx=%010u (Bad Rx=%010u Tx=%010u)\n", ((p0_rx_good_cnt << 16) | (sysRegRead(RALINK_ETH_SW_BASE+0x4020)&0xFFFF)), ((p0_tx_good_cnt << 16)| (sysRegRead(RALINK_ETH_SW_BASE+0x4010)&0xFFFF)), sysRegRead(RALINK_ETH_SW_BASE+0x4020)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x4010)>>16);
 
-	seq_printf(seq, "Port1 Good RX=%010u Tx=%010u (Bad Rx=%010u Tx=%010u)\n", ((p1_rx_good_cnt << 16) | sysRegRead(RALINK_ETH_SW_BASE+0x4120)&0xFFFF), ((p1_tx_good_cnt << 16)|sysRegRead(RALINK_ETH_SW_BASE+0x4110)&0xFFFF),sysRegRead(RALINK_ETH_SW_BASE+0x4120)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x4110)>>16);
+	seq_printf(seq, "Port1 Good RX=%010u Tx=%010u (Bad Rx=%010u Tx=%010u)\n", ((p1_rx_good_cnt << 16) | (sysRegRead(RALINK_ETH_SW_BASE+0x4120)&0xFFFF)), ((p1_tx_good_cnt << 16)| (sysRegRead(RALINK_ETH_SW_BASE+0x4110)&0xFFFF)), sysRegRead(RALINK_ETH_SW_BASE+0x4120)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x4110)>>16);
 
-	seq_printf(seq, "Port2 Good RX=%010u Tx=%010u (Bad Rx=%010u Tx=%010u)\n", ((p2_rx_good_cnt << 16) | sysRegRead(RALINK_ETH_SW_BASE+0x4220)&0xFFFF), ((p2_tx_good_cnt << 16)|sysRegRead(RALINK_ETH_SW_BASE+0x4210)&0xFFFF),sysRegRead(RALINK_ETH_SW_BASE+0x4220)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x4210)>>16);
+	seq_printf(seq, "Port2 Good RX=%010u Tx=%010u (Bad Rx=%010u Tx=%010u)\n", ((p2_rx_good_cnt << 16) | (sysRegRead(RALINK_ETH_SW_BASE+0x4220)&0xFFFF)), ((p2_tx_good_cnt << 16)| (sysRegRead(RALINK_ETH_SW_BASE+0x4210)&0xFFFF)), sysRegRead(RALINK_ETH_SW_BASE+0x4220)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x4210)>>16);
 
-	seq_printf(seq, "Port3 Good RX=%010u Tx=%010u (Bad Rx=%010u Tx=%010u)\n", ((p3_rx_good_cnt << 16) | sysRegRead(RALINK_ETH_SW_BASE+0x4320)&0xFFFF), ((p3_tx_good_cnt << 16)|sysRegRead(RALINK_ETH_SW_BASE+0x4310)&0xFFFF),sysRegRead(RALINK_ETH_SW_BASE+0x4320)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x4310)>>16);
+	seq_printf(seq, "Port3 Good RX=%010u Tx=%010u (Bad Rx=%010u Tx=%010u)\n", ((p3_rx_good_cnt << 16) | (sysRegRead(RALINK_ETH_SW_BASE+0x4320)&0xFFFF)), ((p3_tx_good_cnt << 16)| (sysRegRead(RALINK_ETH_SW_BASE+0x4310)&0xFFFF)), sysRegRead(RALINK_ETH_SW_BASE+0x4320)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x4310)>>16);
 
-	seq_printf(seq, "Port4 Good RX=%010u Tx=%010u (Bad Rx=%010u Tx=%010u)\n", ((p4_rx_good_cnt << 16) | sysRegRead(RALINK_ETH_SW_BASE+0x4420)&0xFFFF), ((p4_tx_good_cnt << 16)|sysRegRead(RALINK_ETH_SW_BASE+0x4410)&0xFFFF),sysRegRead(RALINK_ETH_SW_BASE+0x4420)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x4410)>>16);
+	seq_printf(seq, "Port4 Good RX=%010u Tx=%010u (Bad Rx=%010u Tx=%010u)\n", ((p4_rx_good_cnt << 16) | (sysRegRead(RALINK_ETH_SW_BASE+0x4420)&0xFFFF)), ((p4_tx_good_cnt << 16)| (sysRegRead(RALINK_ETH_SW_BASE+0x4410)&0xFFFF)), sysRegRead(RALINK_ETH_SW_BASE+0x4420)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x4410)>>16);
 
-	seq_printf(seq, "Port5 Good RX=%010u Tx=%010u (Bad Rx=%010u Tx=%010u)\n", ((p5_rx_good_cnt << 16) | sysRegRead(RALINK_ETH_SW_BASE+0x4520)&0xFFFF), ((p5_tx_good_cnt << 16)|sysRegRead(RALINK_ETH_SW_BASE+0x4510)&0xFFFF),sysRegRead(RALINK_ETH_SW_BASE+0x4520)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x4510)>>16);
+	seq_printf(seq, "Port5 Good RX=%010u Tx=%010u (Bad Rx=%010u Tx=%010u)\n", ((p5_rx_good_cnt << 16) | (sysRegRead(RALINK_ETH_SW_BASE+0x4520)&0xFFFF)), ((p5_tx_good_cnt << 16)| (sysRegRead(RALINK_ETH_SW_BASE+0x4510)&0xFFFF)), sysRegRead(RALINK_ETH_SW_BASE+0x4520)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x4510)>>16);
 
 	seq_printf(seq, "Port0 KBytes RX=%010u Tx=%010u \n", ((p0_rx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4028) >> 10)), ((p0_tx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4018) >> 10)));
 
@@ -1473,7 +2044,41 @@ int EswCntRead(struct seq_file *seq, void *v)
 
 	seq_printf(seq, "Port5 KBytes RX=%010u Tx=%010u \n", ((p5_rx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4528) >> 10)), ((p5_tx_byte_cnt << 22) + (sysRegRead(RALINK_ETH_SW_BASE+0x4518) >> 10)));
 
-#elif defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_MT7628)
+#if defined (CONFIG_P5_RGMII_TO_MT7530_MODE)
+#define DUMP_EACH_PORT(base)					\
+	for(i=0; i < 7;i++) {					\
+		mii_mgr_read(31, (base) + (i*0x100), &pkt_cnt); \
+		seq_printf(seq, "%8u ", pkt_cnt);			\
+	}							\
+	seq_printf(seq, "\n");
+	seq_printf(seq, "========================================[MT7530] READ CLEAR========================\n");
+
+		seq_printf(seq, "===================== %8s %8s %8s %8s %8s %8s %8s\n","Port0", "Port1", "Port2", "Port3", "Port4", "Port5", "Port6");
+		seq_printf(seq, "Tx Drop Packet      :"); DUMP_EACH_PORT(0x4000);
+		//seq_printf(seq, "Tx CRC Error        :"); DUMP_EACH_PORT(0x4004);
+		seq_printf(seq, "Tx Unicast Packet   :"); DUMP_EACH_PORT(0x4008);
+		seq_printf(seq, "Tx Multicast Packet :"); DUMP_EACH_PORT(0x400C);
+		seq_printf(seq, "Tx Broadcast Packet :"); DUMP_EACH_PORT(0x4010);
+		//seq_printf(seq, "Tx Collision Event  :"); DUMP_EACH_PORT(0x4014);
+		seq_printf(seq, "Tx Pause Packet     :"); DUMP_EACH_PORT(0x402C);
+		seq_printf(seq, "Rx Drop Packet      :"); DUMP_EACH_PORT(0x4060);
+		seq_printf(seq, "Rx Filtering Packet :"); DUMP_EACH_PORT(0x4064);
+		seq_printf(seq, "Rx Unicast Packet   :"); DUMP_EACH_PORT(0x4068);
+		seq_printf(seq, "Rx Multicast Packet :"); DUMP_EACH_PORT(0x406C);
+		seq_printf(seq, "Rx Broadcast Packet :"); DUMP_EACH_PORT(0x4070);
+		seq_printf(seq, "Rx Alignment Error  :"); DUMP_EACH_PORT(0x4074);
+		seq_printf(seq, "Rx CRC Error	    :"); DUMP_EACH_PORT(0x4078);
+		seq_printf(seq, "Rx Undersize Error  :"); DUMP_EACH_PORT(0x407C);
+		//seq_printf(seq, "Rx Fragment Error   :"); DUMP_EACH_PORT(0x4080);
+		//seq_printf(seq, "Rx Oversize Error   :"); DUMP_EACH_PORT(0x4084);
+		//seq_printf(seq, "Rx Jabber Error     :"); DUMP_EACH_PORT(0x4088);
+		seq_printf(seq, "Rx Pause Packet     :"); DUMP_EACH_PORT(0x408C);
+		mii_mgr_write(31, 0x4fe0, 0xf0);
+		mii_mgr_write(31, 0x4fe0, 0x800000f0);
+#endif
+
+
+#elif defined (CONFIG_RALINK_MT7628)
 	seq_printf(seq, "Port0 Good Pkt Cnt: RX=%08u Tx=%08u (Bad Pkt Cnt: Rx=%08u Tx=%08u)\n", sysRegRead(RALINK_ETH_SW_BASE+0xE8)&0xFFFF,sysRegRead(RALINK_ETH_SW_BASE+0x150)&0xFFFF,sysRegRead(RALINK_ETH_SW_BASE+0xE8)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x150)>>16);
 
 	seq_printf(seq, "Port1 Good Pkt Cnt: RX=%08u Tx=%08u (Bad Pkt Cnt: Rx=%08u Tx=%08u)\n", sysRegRead(RALINK_ETH_SW_BASE+0xEC)&0xFFFF,sysRegRead(RALINK_ETH_SW_BASE+0x154)&0xFFFF,sysRegRead(RALINK_ETH_SW_BASE+0xEC)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x154)>>16);
@@ -1485,9 +2090,7 @@ int EswCntRead(struct seq_file *seq, void *v)
 	seq_printf(seq, "Port4 Good Pkt Cnt: RX=%08u Tx=%08u (Bad Pkt Cnt: Rx=%08u Tx=%08u)\n", sysRegRead(RALINK_ETH_SW_BASE+0xF8)&0xFFFF,sysRegRead(RALINK_ETH_SW_BASE+0x160)&0xFFFF,sysRegRead(RALINK_ETH_SW_BASE+0xF8)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x160)>>16);
 
 	seq_printf(seq, "Port5 Good Pkt Cnt: RX=%08u Tx=%08u (Bad Pkt Cnt: Rx=%08u Tx=%08u)\n", sysRegRead(RALINK_ETH_SW_BASE+0xFC)&0xFFFF,sysRegRead(RALINK_ETH_SW_BASE+0x164)&0xFFFF,sysRegRead(RALINK_ETH_SW_BASE+0xFC)>>16, sysRegRead(RALINK_ETH_SW_BASE+0x164)>>16);
-#elif defined (CONFIG_RALINK_RT3883)
-	/* no built-in switch */
-#elif defined (CONFIG_RALINK_MT7621)
+#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 
 #define DUMP_EACH_PORT(base)					\
 	for(i=0; i < 7;i++) {					\
@@ -1496,7 +2099,10 @@ int EswCntRead(struct seq_file *seq, void *v)
 	}							\
 	seq_printf(seq, "\n");
 
-	if(sysRegRead(0xbe00000c & (1<<16))) { //MCM
+#if defined (CONFIG_RALINK_MT7621) /* TODO: need to update to use MT7530 compiler flag */
+	if(sysRegRead(0xbe00000c & (1<<16)))//MCM
+#endif
+	{
 		seq_printf(seq, "===================== %8s %8s %8s %8s %8s %8s %8s\n","Port0", "Port1", "Port2", "Port3", "Port4", "Port5", "Port6");
 		seq_printf(seq, "Tx Drop Packet      :"); DUMP_EACH_PORT(0x4000);
 		seq_printf(seq, "Tx CRC Error        :"); DUMP_EACH_PORT(0x4004);
@@ -1519,9 +2125,12 @@ int EswCntRead(struct seq_file *seq, void *v)
 		seq_printf(seq, "Rx Pause Packet     :"); DUMP_EACH_PORT(0x408C);
 		mii_mgr_write(31, 0x4fe0, 0xf0);
 		mii_mgr_write(31, 0x4fe0, 0x800000f0);
-	} else {
+	} 
+#if defined (CONFIG_RALINK_MT7621)	/* TODO: need to update to use MT7530 compiler flag */
+	else {
 		seq_printf(seq, "no built-in switch\n");
 	}
+#endif
 
 #else /* RT305x, RT3352 */
 	seq_printf(seq, "Port0: Good Pkt Cnt: RX=%08u (Bad Pkt Cnt: Rx=%08u)\n", sysRegRead(RALINK_ETH_SW_BASE+0xE8)&0xFFFF,sysRegRead(RALINK_ETH_SW_BASE+0xE8)>>16);
@@ -1700,6 +2309,179 @@ static const struct file_operations schedule_sw_fops = {
 };
 #endif
 
+#if defined(CONFIG_RAETH_PDMA_DVT)
+static int PdmaDvtRead(struct seq_file *seq, void *v)
+{
+    seq_printf(seq, "g_pdma_dvt_show_config = 0x%x\n", pdma_dvt_get_show_config());
+    seq_printf(seq, "g_pdma_dvt_rx_test_config = 0x%x\n", pdma_dvt_get_rx_test_config());
+    seq_printf(seq, "g_pdma_dvt_tx_test_config = 0x%x\n", pdma_dvt_get_tx_test_config());
+    
+	return 0;
+}
+
+static int PdmaDvtOpen(struct inode *inode, struct file *file)
+{
+	return single_open(file, PdmaDvtRead, NULL);
+}
+
+static ssize_t PdmaDvtWrite(struct file *file, const char __user *buffer, 
+		      size_t count, loff_t *data)
+{
+	char buf[32];
+    char *pBuf;
+    int len = count;
+    int x = 0,y = 0;
+    char *pToken = NULL;
+    char *pDelimiter = " \t";
+
+    printk("write parameter len = %d\n\r", (int)len);
+    if(len >= sizeof(buf)){
+        printk("input handling fail!\n");
+        len = sizeof(buf) - 1;
+        return -1;
+    }
+    
+    if(copy_from_user(buf, buffer, len)){
+        return -EFAULT;
+    }
+    buf[len] = '\0';
+    printk("write parameter data = %s\n\r", buf);
+
+    pBuf = buf;
+    pToken = strsep(&pBuf, pDelimiter);
+    x = NULL != pToken ? simple_strtol(pToken, NULL, 16) : 0;
+
+    pToken = strsep(&pBuf, "\t\n ");
+    if(pToken != NULL){
+        y = NULL != pToken ? simple_strtol(pToken, NULL, 16) : 0;
+        printk("y = 0x%08x \n\r", y);
+    }
+
+    if ( (sizeof(pdma_dvt_dbg_func)/sizeof(pdma_dvt_dbg_func[0]) > x) && NULL != pdma_dvt_dbg_func[x])
+    {
+        (*pdma_dvt_dbg_func[x])(x, y);
+    }
+    else
+    {
+        printk("no handler defined for command id(0x%08x)\n\r", x);
+    }
+    
+    printk("x(0x%08x), y(0x%08x)\n", x, y);
+
+    return len;
+}
+
+static const struct file_operations pdma_dev_sw_fops = {
+	.owner 		= THIS_MODULE,
+	.open       = PdmaDvtOpen,
+	.read	 	= seq_read,
+	.write 		= PdmaDvtWrite
+};
+#endif  //#if defined(CONFIG_RAETH_PDMA_DVT)
+
+#if defined(CONFIG_RAETH_INT_DBG)
+int IntStatsUpdate(unsigned int int_status)
+{
+	if(int_status & (RX_COHERENT|TX_COHERENT|RXD_ERROR)){
+		if(int_status & RX_COHERENT)
+			raeth_int.RX_COHERENT_CNT++;
+		if(int_status & TX_COHERENT)
+			raeth_int.TX_COHERENT_CNT++;
+		if(int_status & RXD_ERROR)
+			raeth_int.RXD_ERROR_CNT++;
+	}
+	if(int_status & (RX_DLY_INT|RING1_RX_DLY_INT|RING2_RX_DLY_INT|RING3_RX_DLY_INT)){
+		if(int_status & RX_DLY_INT)
+			raeth_int.RX_DLY_INT_CNT++;
+		if(int_status & RING1_RX_DLY_INT)
+			raeth_int.RING1_RX_DLY_INT_CNT++;
+		if(int_status & RING2_RX_DLY_INT)
+			raeth_int.RING2_RX_DLY_INT_CNT++;
+		if(int_status & RING3_RX_DLY_INT)
+			raeth_int.RING3_RX_DLY_INT_CNT++;
+	}
+	if(int_status & (TX_DLY_INT)){
+		raeth_int.TX_DLY_INT_CNT++;
+	}
+	if(int_status & (RX_DONE_INT0|RX_DONE_INT1|RX_DONE_INT2|RX_DONE_INT3)){
+		if(int_status & RX_DONE_INT0)
+			raeth_int.RX_DONE_INT0_CNT++;
+		if(int_status & RX_DONE_INT1)
+			raeth_int.RX_DONE_INT1_CNT++;
+		if(int_status & RX_DONE_INT2)
+			raeth_int.RX_DONE_INT2_CNT++;
+		if(int_status & RX_DONE_INT3)
+			raeth_int.RX_DONE_INT3_CNT++;
+	}
+	if(int_status & (TX_DONE_INT0|TX_DONE_INT1|TX_DONE_INT2|TX_DONE_INT3)){
+		if(int_status & TX_DONE_INT0)
+			raeth_int.TX_DONE_INT0_CNT++;
+		if(int_status & TX_DONE_INT1)
+			raeth_int.TX_DONE_INT1_CNT++;
+		if(int_status & TX_DONE_INT2)
+			raeth_int.TX_DONE_INT2_CNT++;
+		if(int_status & TX_DONE_INT3)
+			raeth_int.TX_DONE_INT3_CNT++;
+	}
+	if(int_status & (ALT_RPLC_INT1|ALT_RPLC_INT2|ALT_RPLC_INT3)){
+		if(int_status & ALT_RPLC_INT1)
+			raeth_int.ALT_RPLC_INT1_CNT++;
+		if(int_status & ALT_RPLC_INT2)
+			raeth_int.ALT_RPLC_INT2_CNT++;
+		if(int_status & ALT_RPLC_INT3)
+			raeth_int.ALT_RPLC_INT3_CNT++;
+	}
+
+	return 0;
+}
+
+static int IntDbgRead(struct seq_file *seq, void *v)
+{
+	seq_printf(seq, "Raether Interrupt Statistics\n");
+	seq_printf(seq, "RX_COHERENT = %d\n", raeth_int.RX_COHERENT_CNT);
+	seq_printf(seq, "RX_DLY_INT = %d\n", raeth_int.RX_DLY_INT_CNT);
+	seq_printf(seq, "TX_COHERENT = %d\n", raeth_int.TX_COHERENT_CNT);
+	seq_printf(seq, "TX_DLY_INT = %d\n", raeth_int.TX_DLY_INT_CNT);
+	seq_printf(seq, "RING3_RX_DLY_INT = %d\n", raeth_int.RING3_RX_DLY_INT_CNT);
+	seq_printf(seq, "RING2_RX_DLY_INT = %d\n", raeth_int.RING2_RX_DLY_INT_CNT);
+	seq_printf(seq, "RING1_RX_DLY_INT = %d\n", raeth_int.RING1_RX_DLY_INT_CNT);
+	seq_printf(seq, "RXD_ERROR = %d\n", raeth_int.RXD_ERROR_CNT);
+	seq_printf(seq, "ALT_RPLC_INT3 = %d\n", raeth_int.ALT_RPLC_INT3_CNT);
+	seq_printf(seq, "ALT_RPLC_INT2 = %d\n", raeth_int.ALT_RPLC_INT2_CNT);
+	seq_printf(seq, "ALT_RPLC_INT1 = %d\n", raeth_int.ALT_RPLC_INT1_CNT);
+	seq_printf(seq, "RX_DONE_INT3 = %d\n", raeth_int.RX_DONE_INT3_CNT);
+	seq_printf(seq, "RX_DONE_INT2 = %d\n", raeth_int.RX_DONE_INT2_CNT);
+	seq_printf(seq, "RX_DONE_INT1 = %d\n", raeth_int.RX_DONE_INT1_CNT);
+	seq_printf(seq, "RX_DONE_INT0 = %d\n", raeth_int.RX_DONE_INT0_CNT);
+	seq_printf(seq, "TX_DONE_INT3 = %d\n", raeth_int.TX_DONE_INT3_CNT);
+	seq_printf(seq, "TX_DONE_INT2 = %d\n", raeth_int.TX_DONE_INT2_CNT);
+	seq_printf(seq, "TX_DONE_INT1 = %d\n", raeth_int.TX_DONE_INT1_CNT);
+	seq_printf(seq, "TX_DONE_INT0 = %d\n", raeth_int.TX_DONE_INT0_CNT);
+
+    	memset(&raeth_int, 0, sizeof(raeth_int));	/* clear results */
+	return 0;
+}
+
+static int IntDbgOpen(struct inode *inode, struct file *file)
+{
+	//memset(&raeth_int, 0, sizeof(raeth_int));
+	return single_open(file, IntDbgRead, NULL);
+}
+
+static ssize_t IntDbgWrite(struct file *file, const char __user *buffer, 
+		      size_t count, loff_t *data)
+{
+    return 0;
+}
+
+static const struct file_operations int_dbg_sw_fops = {
+	.owner 		= THIS_MODULE,
+	.open       	= IntDbgOpen,
+	.read	 	= seq_read,
+	.write 		= IntDbgWrite
+};
+#endif	/* CONFIG_RAETH_INT_DBG */
+
 int debug_proc_init(void)
 {
     if (procRegDir == NULL)
@@ -1753,6 +2535,35 @@ int debug_proc_init(void)
 #endif
 	    printk("!! FAIL to create %s PROC !!\n", PROCREG_RXRING);
 
+#if defined (CONFIG_RAETH_HW_LRO) || defined (CONFIG_RAETH_MULTIPLE_RX_RING)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)
+    if ((procRxRing1 = create_proc_entry(PROCREG_RXRING1, 0, procRegDir)))
+	    procRxRing1->proc_fops = &rx_ring1_fops;
+    else
+#else
+    if (!(procRxRing1 = proc_create(PROCREG_RXRING1, 0, procRegDir, &rx_ring1_fops)))
+#endif
+	    printk("!! FAIL to create %s PROC !!\n", PROCREG_RXRING1);
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)
+    if ((procRxRing2 = create_proc_entry(PROCREG_RXRING2, 0, procRegDir)))
+	    procRxRing2->proc_fops = &rx_ring2_fops;
+    else
+#else
+    if (!(procRxRing2 = proc_create(PROCREG_RXRING2, 0, procRegDir, &rx_ring2_fops)))
+#endif
+	    printk("!! FAIL to create %s PROC !!\n", PROCREG_RXRING2);
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)
+    if ((procRxRing3 = create_proc_entry(PROCREG_RXRING3, 0, procRegDir)))
+	    procRxRing3->proc_fops = &rx_ring3_fops;
+    else
+#else
+    if (!(procRxRing3 = proc_create(PROCREG_RXRING3, 0, procRegDir, &rx_ring3_fops)))
+#endif
+	    printk("!! FAIL to create %s PROC !!\n", PROCREG_RXRING3);
+#endif  /* CONFIG_RAETH_HW_LRO */
+
 #if defined (CONFIG_MIPS)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)
     if ((procSysCP0 = create_proc_entry(PROCREG_CP0, 0, procRegDir)))
@@ -1795,6 +2606,25 @@ int debug_proc_init(void)
 	    printk("!! FAIL to create %s PROC !!\n", PROCREG_LRO_STATS);
 #endif
 
+#if defined(CONFIG_RAETH_HW_LRO)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)
+    if ((procHwLroStats = create_proc_entry(PROCREG_HW_LRO_STATS, 0, procRegDir)))
+	    procHwLroStats->proc_fops = &hw_lro_stats_fops;
+    else
+#else
+    if (!(procHwLroStats = proc_create(PROCREG_HW_LRO_STATS, 0, procRegDir, &hw_lro_stats_fops)))
+#endif
+	    printk("!! FAIL to create %s PROC !!\n", PROCREG_HW_LRO_STATS);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)
+    if ((procHwLroAutoTlb = create_proc_entry(PROCREG_HW_LRO_AUTO_TLB, 0, procRegDir)))
+	    procHwLroAutoTlb->proc_fops = &hw_lro_auto_tlb_fops;
+    else
+#else
+    if (!(procHwLroAutoTlb = proc_create(PROCREG_HW_LRO_AUTO_TLB, 0, procRegDir, &hw_lro_auto_tlb_fops)))
+#endif
+	    printk("!! FAIL to create %s PROC !!\n", PROCREG_HW_LRO_AUTO_TLB);
+#endif  /* CONFIG_RAETH_HW_LRO */
+
 #if defined(CONFIG_RAETH_QOS)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)
     if ((procRaQOS = create_proc_entry(PROCREG_RAQOS, 0, procRegDir)))
@@ -1836,6 +2666,28 @@ int debug_proc_init(void)
 #endif
 	    printk("!! FAIL to create %s PROC !!\n", PROCREG_SCHE);
 #endif
+
+#if defined(CONFIG_RAETH_PDMA_DVT)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)
+    if ((procPdmaDvt = create_proc_entry(PROCREG_PDMA_DVT, 0, procRegDir)))
+        procPdmaDvt->proc_fops = &pdma_dev_sw_fops;
+    else
+#else
+    if (!(procPdmaDvt = proc_create(PROCREG_PDMA_DVT, 0, procRegDir, &pdma_dev_sw_fops )))
+#endif
+        printk("!! FAIL to create %s PROC !!\n", PROCREG_PDMA_DVT);
+#endif  //#if defined(CONFIG_RAETH_PDMA_DVT)
+
+#if defined(CONFIG_RAETH_INT_DBG)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)
+    if ((procIntDbg = create_proc_entry(PROCREG_INT_DBG, 0, procRegDir)))
+        procIntDbg->proc_fops = &int_dbg_sw_fops;
+    else
+#else
+    if (!(procIntDbg = proc_create(PROCREG_INT_DBG, 0, procRegDir, &int_dbg_sw_fops)))
+#endif
+        printk("!! FAIL to create %s PROC !!\n", PROCREG_INT_DBG);
+#endif  /* CONFIG_RAETH_INT_DBG */
 
     printk(KERN_ALERT "PROC INIT OK!\n");
     return 0;

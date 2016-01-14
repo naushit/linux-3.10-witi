@@ -9,6 +9,12 @@ menuconfig CRYPTO_HW
 	  If you say N, all options in this submenu will be skipped and disabled.
 
 if CRYPTO_HW
+config CRYPTO_DEV_MTK_AES
+        tristate "Support for MediaTek AES Engine "
+        depends on RALINK_MT7628
+        help
+          Turn on the configuration will include MediaTek AES Engine driver.
+
 
 config CRYPTO_DEV_PADLOCK
 	tristate "Support for VIA PadLock ACE"

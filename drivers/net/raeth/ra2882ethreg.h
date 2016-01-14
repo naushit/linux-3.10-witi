@@ -4,7 +4,10 @@
 #include <linux/mii.h>		// for struct mii_if_info in ra2882ethreg.h
 #include <linux/version.h>	/* check linux version for 2.4 and 2.6 compatibility */
 #include <linux/interrupt.h>	/* for "struct tasklet_struct" in linux-3.10.14 */
-
+#if defined (CONFIG_HW_SFQ)
+#include <linux/ip.h>  
+#include <linux/ipv6.h>
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
 #include <asm/rt2880/rt_mmap.h>
 #endif
@@ -21,11 +24,24 @@
 #define	MIN_PACKET_SIZE 60
 #define MAX_TXD_LEN 0x3fff
 
+#if defined (CONFIG_ARCH_MT7623)
+#define phys_to_bus(a) (a)
+#else
 #define phys_to_bus(a) (a & 0x1FFFFFFF)
+#endif
+
+
+
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)
-#define BIT(x)	((1 << x))
+#define BIT(x)	    ((1 << x))
 #endif
+/* bits range: for example BITS(16,23) = 0xFF0000
+ *   ==>  (BIT(m)-1)   = 0x0000FFFF     ~(BIT(m)-1)   => 0xFFFF0000
+ *   ==>  (BIT(n+1)-1) = 0x00FFFFFF
+ */
+#define BITS(m,n)   (~(BIT(m)-1) & ((BIT(n) - 1) | BIT(n)))
+
 #define ETHER_ADDR_LEN  6
 
 /*  Phy Vender ID list */
@@ -41,13 +57,24 @@
      FE_INT_STATUS
 */
 #if defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_RT6855) || defined(CONFIG_RALINK_RT6855A) || \
-    defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) || defined (CONFIG_RALINK_MT7628)
+    defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) || defined (CONFIG_RALINK_MT7628) || \
+    defined (CONFIG_ARCH_MT7623)
 
 #define RX_COHERENT      BIT(31)
 #define RX_DLY_INT       BIT(30)
 #define TX_COHERENT      BIT(29)
 #define TX_DLY_INT       BIT(28)
+#define RING3_RX_DLY_INT    BIT(27)
+#define RING2_RX_DLY_INT    BIT(26)
+#define RING1_RX_DLY_INT    BIT(25)
 
+#define RXD_ERROR	 BIT(24)
+#define ALT_RPLC_INT3    BIT(23)
+#define ALT_RPLC_INT2    BIT(22)
+#define ALT_RPLC_INT1    BIT(21)
+
+#define RX_DONE_INT3     BIT(19)
+#define RX_DONE_INT2     BIT(18)
 #define RX_DONE_INT1     BIT(17)
 #define RX_DONE_INT0     BIT(16)
 
@@ -56,7 +83,7 @@
 #define TX_DONE_INT1     BIT(1)
 #define TX_DONE_INT0     BIT(0)
 
-#if defined (CONFIG_RALINK_MT7621)
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 #define RLS_COHERENT     BIT(29)
 #define RLS_DLY_INT      BIT(28)
 #define RLS_DONE_INT     BIT(0)
@@ -88,10 +115,11 @@
 
 #define FE_INT_ALL		(TX_DONE_INT3 | TX_DONE_INT2 | \
 			         TX_DONE_INT1 | TX_DONE_INT0 | \
-	                         RX_DONE_INT0 )
+	                         RX_DONE_INT0 | RX_DONE_INT1 | \
+	                         RX_DONE_INT2 | RX_DONE_INT3)
 
-#if defined (CONFIG_RALINK_MT7621)
-#define QFE_INT_ALL		(RLS_DONE_INT | RX_DONE_INT0 | RX_DONE_INT1)
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
+#define QFE_INT_ALL		(RLS_DONE_INT | RX_DONE_INT0 | RX_DONE_INT1| RX_DONE_INT2| RX_DONE_INT3)
 #define QFE_INT_DLY_INIT	(RLS_DLY_INT | RX_DLY_INT)
 
 #define NUM_QDMA_PAGE	    512	
@@ -170,7 +198,7 @@
 
 #define ESW_PHY_POLLING		(RALINK_ETH_SW_BASE + 0x7000)
 
-#elif defined (CONFIG_RALINK_MT7621)
+#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 
 #define ESW_PHY_POLLING		(RALINK_ETH_SW_BASE + 0x0000)
 
@@ -216,7 +244,8 @@ typedef struct _PSEUDO_ADAPTER {
 #define RAGDMA2_OFFSET		0x0060
 #define RACDMA_OFFSET		0x0080
 #if defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_RT6855) || defined(CONFIG_RALINK_RT6855A) || \
-    defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) || defined (CONFIG_RALINK_MT7628)
+    defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) || defined (CONFIG_RALINK_MT7628) || \
+    defined (CONFIG_ARCH_MT7623)
 
 #define RAPDMA_OFFSET		0x0800
 #define SDM_OFFSET		0x0C00
@@ -290,7 +319,8 @@ typedef struct _PSEUDO_ADAPTER {
 #define SDM_CS_ERR		(RALINK_FRAME_ENGINE_BASE+SDM_OFFSET+0x110) //Switch DMA rx checksum error count
 
 #elif defined (CONFIG_RALINK_RT6855) || defined(CONFIG_RALINK_RT6855A) || \
-      defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) 
+      defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) || \
+      defined (CONFIG_ARCH_MT7623)
 
 /* Old FE with New PDMA */
 #define PDMA_RELATED            0x0800
@@ -325,6 +355,16 @@ typedef struct _PSEUDO_ADAPTER {
 #define RX_CALC_IDX1            (RALINK_FRAME_ENGINE_BASE + PDMA_RELATED+0x118)
 #define RX_DRX_IDX1             (RALINK_FRAME_ENGINE_BASE + PDMA_RELATED+0x11C)
 
+#define RX_BASE_PTR2            (RALINK_FRAME_ENGINE_BASE + PDMA_RELATED+0x120)
+#define RX_MAX_CNT2             (RALINK_FRAME_ENGINE_BASE + PDMA_RELATED+0x124)
+#define RX_CALC_IDX2            (RALINK_FRAME_ENGINE_BASE + PDMA_RELATED+0x128)
+#define RX_DRX_IDX12            (RALINK_FRAME_ENGINE_BASE + PDMA_RELATED+0x12C)
+
+#define RX_BASE_PTR3            (RALINK_FRAME_ENGINE_BASE + PDMA_RELATED+0x130)
+#define RX_MAX_CNT3             (RALINK_FRAME_ENGINE_BASE + PDMA_RELATED+0x134)
+#define RX_CALC_IDX3            (RALINK_FRAME_ENGINE_BASE + PDMA_RELATED+0x138)
+#define RX_DRX_IDX3             (RALINK_FRAME_ENGINE_BASE + PDMA_RELATED+0x13C)
+
 #define PDMA_INFO               (RALINK_FRAME_ENGINE_BASE + PDMA_RELATED+0x200)
 #define PDMA_GLO_CFG            (RALINK_FRAME_ENGINE_BASE + PDMA_RELATED+0x204)
 #define PDMA_RST_IDX            (RALINK_FRAME_ENGINE_BASE + PDMA_RELATED+0x208)
@@ -351,7 +391,7 @@ typedef struct _PSEUDO_ADAPTER {
 #define GDMA1_SHPR_CFG      (RALINK_FRAME_ENGINE_BASE + GDMA1_RELATED + 0x04)
 #define GDMA1_MAC_ADRL      (RALINK_FRAME_ENGINE_BASE + GDMA1_RELATED + 0x08)
 #define GDMA1_MAC_ADRH      (RALINK_FRAME_ENGINE_BASE + GDMA1_RELATED + 0x0C)
-#elif defined (CONFIG_RALINK_MT7621)
+#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 #define GDMA1_RELATED       0x0500
 #define GDMA1_FWD_CFG       (RALINK_FRAME_ENGINE_BASE + GDMA1_RELATED + 0x00)
 #define GDMA1_SHPR_CFG      (RALINK_FRAME_ENGINE_BASE + GDMA1_RELATED + 0x04)
@@ -403,7 +443,7 @@ typedef struct _PSEUDO_ADAPTER {
 #define SMACCR0		    (RALINK_ETH_SW_BASE + 0x3FE4)
 #define SMACCR1		    (RALINK_ETH_SW_BASE + 0x3FE8)
 #define CKGCR               (RALINK_ETH_SW_BASE + 0x3FF0)
-#elif defined (CONFIG_RALINK_MT7621)
+#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 #define CDMA_RELATED        0x0400
 #define CDMA_CSG_CFG        (RALINK_FRAME_ENGINE_BASE + CDMA_RELATED + 0x00) //fake definition
 #define CDMP_IG_CTRL        (RALINK_FRAME_ENGINE_BASE + CDMA_RELATED + 0x00)
@@ -420,7 +460,7 @@ typedef struct _PSEUDO_ADAPTER {
 #define PDMA_FC_CFG	    (RALINK_FRAME_ENGINE_BASE+0x100)
 
 
-#if defined (CONFIG_RALINK_MT7621)
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 /*kurtis: add QDMA define*/
 
 #define CLK_CFG_0		(RALINK_SYSCTL_BASE + 0x2C)
@@ -499,6 +539,12 @@ typedef struct _PSEUDO_ADAPTER {
 #define  QRX_MAX_CNT_1      (RALINK_FRAME_ENGINE_BASE + QDMA_RELATED + 0x114)
 #define  QRX_CRX_IDX_1      (RALINK_FRAME_ENGINE_BASE + QDMA_RELATED + 0x118)
 #define  QRX_DRX_IDX_1      (RALINK_FRAME_ENGINE_BASE + QDMA_RELATED + 0x11C)
+#if defined (CONFIG_ARCH_MT7623)
+#define  VQTX_TB_BASE_0     (RALINK_FRAME_ENGINE_BASE + QDMA_RELATED + 0x180)
+#define  VQTX_TB_BASE_1     (RALINK_FRAME_ENGINE_BASE + QDMA_RELATED + 0x184)
+#define  VQTX_TB_BASE_2     (RALINK_FRAME_ENGINE_BASE + QDMA_RELATED + 0x188)
+#define  VQTX_TB_BASE_3     (RALINK_FRAME_ENGINE_BASE + QDMA_RELATED + 0x18C)
+#endif
 #define  QDMA_INFO          (RALINK_FRAME_ENGINE_BASE + QDMA_RELATED + 0x200)
 #define  QDMA_GLO_CFG       (RALINK_FRAME_ENGINE_BASE + QDMA_RELATED + 0x204)
 #define  QDMA_RST_IDX       (RALINK_FRAME_ENGINE_BASE + QDMA_RELATED + 0x208)
@@ -653,7 +699,573 @@ typedef struct _PSEUDO_ADAPTER {
 
 #endif
 
+/* LRO global control */ 
+/* Bits [15:0]:LRO_ALT_RFSH_TIMER, Bits [20:16]:LRO_ALT_TICK_TIMER */
+#define LRO_ALT_REFRESH_TIMER   (RALINK_FRAME_ENGINE_BASE+0x001C)
 
+/* LRO auto-learn table info */
+#define PDMA_FE_ALT_CF8		(RALINK_FRAME_ENGINE_BASE+0x0300)
+#define PDMA_FE_ALT_SGL_CFC	(RALINK_FRAME_ENGINE_BASE+0x0304)
+#define PDMA_FE_ALT_SEQ_CFC	(RALINK_FRAME_ENGINE_BASE+0x0308)
+
+/* LRO controls */
+#define ADMA_LRO_CTRL_OFFSET    0x0980
+/* 
+ * Bit [0]:LRO_EN, Bit [1]:LRO_IPv6_EN, Bit [2]:MULTIPLE_NON_LRO_RX_RING_EN, Bit [3]:MULTIPLE_RXD_PREFETCH_EN,
+ * Bit [4]:RXD_PREFETCH_EN, Bit [5]:LRO_DLY_INT_EN, Bit [6]:LRO_CRSN_BNW, Bit [7]:L3_CKS_UPD_EN, 
+ * Bit [20]:first_ineligible_pkt_redirect_en, Bit [21]:cr_lro_alt_score_mode, Bit [22]:cr_lro_alt_rplc_mode,
+ * Bit [23]:cr_lro_l4_ctrl_psh_en, Bits [28:26]:LRO_RING_RELINGUISH_REQ, Bits [31:29]:LRO_RING_RELINGUISH_DONE
+ */
+#define ADMA_LRO_CTRL_DW0		(RALINK_FRAME_ENGINE_BASE+ADMA_LRO_CTRL_OFFSET+0x00)
+/* Bits [31:0]:LRO_CPU_REASON */
+#define ADMA_LRO_CTRL_DW1		(RALINK_FRAME_ENGINE_BASE+ADMA_LRO_CTRL_OFFSET+0x04)
+/* Bits [31:0]:AUTO_LEARN_LRO_ELIGIBLE_THRESHOLD */
+#define ADMA_LRO_CTRL_DW2		(RALINK_FRAME_ENGINE_BASE+ADMA_LRO_CTRL_OFFSET+0x08)
+/* 
+ * Bits [7:0]:LRO_MAX_AGGREGATED_CNT, Bits [11:8]:LRO_VLAN_EN, Bits [13:12]:LRO_VLAN_VID_CMP_DEPTH,
+ * Bit [14]:ADMA_FW_RSTN_REQ, Bit [15]:ADMA_MODE, Bits [31:16]:LRO_MIN_RXD_SDL0
+ */
+#define ADMA_LRO_CTRL_DW3       (RALINK_FRAME_ENGINE_BASE+ADMA_LRO_CTRL_OFFSET+0x0C)
+
+/* LRO RX delay interrupt configurations */
+#define LRO_RX1_DLY_INT        (RALINK_FRAME_ENGINE_BASE+0x0a70)
+#define LRO_RX2_DLY_INT        (RALINK_FRAME_ENGINE_BASE+0x0a74)
+#define LRO_RX3_DLY_INT        (RALINK_FRAME_ENGINE_BASE+0x0a78)
+
+/* LRO auto-learn configurations */
+#define PDMA_LRO_ATL_OVERFLOW_ADJ_OFFSET    0x0990
+#define PDMA_LRO_ATL_OVERFLOW_ADJ   (RALINK_FRAME_ENGINE_BASE+PDMA_LRO_ATL_OVERFLOW_ADJ_OFFSET)
+#define LRO_ALT_SCORE_DELTA   (RALINK_FRAME_ENGINE_BASE+0x0a4c)
+
+/* LRO agg timer configurations */
+#define LRO_MAX_AGG_TIME       (RALINK_FRAME_ENGINE_BASE+0x0a5c)
+
+/* LRO configurations of RX ring #0 */
+#define LRO_RXRING0_OFFSET          0x0b00
+#define LRO_RX_RING0_DIP_DW0		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING0_OFFSET+0x04)
+#define LRO_RX_RING0_DIP_DW1		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING0_OFFSET+0x08)
+#define LRO_RX_RING0_DIP_DW2		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING0_OFFSET+0x0C)
+#define LRO_RX_RING0_DIP_DW3		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING0_OFFSET+0x10)
+#define LRO_RX_RING0_CTRL_DW1		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING0_OFFSET+0x28)
+/* Bit [8]:RING0_VLD, Bit [9]:RING0_MYIP_VLD */
+#define LRO_RX_RING0_CTRL_DW2		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING0_OFFSET+0x2C)
+#define LRO_RX_RING0_CTRL_DW3		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING0_OFFSET+0x30)
+/* LRO configurations of RX ring #1 */
+#define LRO_RXRING1_OFFSET          0x0b40
+#define LRO_RX_RING1_STP_DTP_DW		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING1_OFFSET+0x00)
+#define LRO_RX_RING1_DIP_DW0		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING1_OFFSET+0x04)
+#define LRO_RX_RING1_DIP_DW1		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING1_OFFSET+0x08)
+#define LRO_RX_RING1_DIP_DW2		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING1_OFFSET+0x0C)
+#define LRO_RX_RING1_DIP_DW3		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING1_OFFSET+0x10)
+#define LRO_RX_RING1_SIP_DW0		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING1_OFFSET+0x14)
+#define LRO_RX_RING1_SIP_DW1		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING1_OFFSET+0x18)
+#define LRO_RX_RING1_SIP_DW2		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING1_OFFSET+0x1C)
+#define LRO_RX_RING1_SIP_DW3		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING1_OFFSET+0x20)
+#define LRO_RX_RING1_CTRL_DW0		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING1_OFFSET+0x24)
+#define LRO_RX_RING1_CTRL_DW1		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING1_OFFSET+0x28)
+#define LRO_RX_RING1_CTRL_DW2		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING1_OFFSET+0x2C)
+#define LRO_RX_RING1_CTRL_DW3		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING1_OFFSET+0x30)
+#define LRO_RXRING2_OFFSET          0x0b80
+#define LRO_RX_RING2_STP_DTP_DW		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING2_OFFSET+0x00)
+#define LRO_RX_RING2_DIP_DW0		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING2_OFFSET+0x04)
+#define LRO_RX_RING2_DIP_DW1		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING2_OFFSET+0x08)
+#define LRO_RX_RING2_DIP_DW2		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING2_OFFSET+0x0C)
+#define LRO_RX_RING2_DIP_DW3		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING2_OFFSET+0x10)
+#define LRO_RX_RING2_SIP_DW0		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING2_OFFSET+0x14)
+#define LRO_RX_RING2_SIP_DW1		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING2_OFFSET+0x18)
+#define LRO_RX_RING2_SIP_DW2		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING2_OFFSET+0x1C)
+#define LRO_RX_RING2_SIP_DW3		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING2_OFFSET+0x20)
+#define LRO_RX_RING2_CTRL_DW0		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING2_OFFSET+0x24)
+#define LRO_RX_RING2_CTRL_DW1		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING2_OFFSET+0x28)
+#define LRO_RX_RING2_CTRL_DW2		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING2_OFFSET+0x2C)
+#define LRO_RX_RING2_CTRL_DW3		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING2_OFFSET+0x30)
+#define LRO_RXRING3_OFFSET          0x0bc0
+#define LRO_RX_RING3_STP_DTP_DW		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING3_OFFSET+0x00)
+#define LRO_RX_RING3_DIP_DW0		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING3_OFFSET+0x04)
+#define LRO_RX_RING3_DIP_DW1		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING3_OFFSET+0x08)
+#define LRO_RX_RING3_DIP_DW2		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING3_OFFSET+0x0C)
+#define LRO_RX_RING3_DIP_DW3		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING3_OFFSET+0x10)
+#define LRO_RX_RING3_SIP_DW0		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING3_OFFSET+0x14)
+#define LRO_RX_RING3_SIP_DW1		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING3_OFFSET+0x18)
+#define LRO_RX_RING3_SIP_DW2		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING3_OFFSET+0x1C)
+#define LRO_RX_RING3_SIP_DW3		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING3_OFFSET+0x20)
+#define LRO_RX_RING3_CTRL_DW0		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING3_OFFSET+0x24)
+#define LRO_RX_RING3_CTRL_DW1		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING3_OFFSET+0x28)
+#define LRO_RX_RING3_CTRL_DW2		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING3_OFFSET+0x2C)
+#define LRO_RX_RING3_CTRL_DW3		(RALINK_FRAME_ENGINE_BASE+LRO_RXRING3_OFFSET+0x30)
+
+/* LRO RX ring mode */
+#define PDMA_RX_NORMAL_MODE         (0x0)
+#define PDMA_RX_PSE_MODE            (0x1)
+#define PDMA_RX_FORCE_PORT          (0x2)
+#define PDMA_RX_AUTO_LEARN          (0x3)
+
+#define ADMA_RX_RING0   (0)
+#define ADMA_RX_RING1   (1)
+#define ADMA_RX_RING2   (2)
+#define ADMA_RX_RING3   (3)
+
+#define ADMA_RX_LEN0_MASK   (0x3fff)
+#define ADMA_RX_LEN1_MASK   (0x3)
+
+#define PDMA_LRO_EN             BIT(0)
+#define PDMA_LRO_IPV6_EN        BIT(1)
+#define PDMA_LRO_IPV4_CSUM_UPDATE_EN    BIT(7)
+#define PDMA_LRO_IPV4_CTRL_PUSH_EN	BIT(23)
+#define PDMA_LRO_RXD_PREFETCH_EN        BITS(3,4)
+#define PDMA_NON_LRO_MULTI_EN   BIT(2)
+#define PDMA_LRO_DLY_INT_EN             BIT(5)
+#define PDMA_LRO_FUSH_REQ               BITS(26,28)
+#define PDMA_LRO_RELINGUISH     BITS(29,31)
+#define PDMA_LRO_FREQ_PRI_ADJ   BITS(16,19)
+#define PDMA_LRO_TPUT_PRE_ADJ           BITS(8,11)
+#define PDMA_LRO_TPUT_PRI_ADJ           BITS(12,15)
+#define PDMA_LRO_ALT_SCORE_MODE         BIT(21)
+#define PDMA_LRO_RING_AGE1      BITS(22,31)
+#define PDMA_LRO_RING_AGE2      BITS(0,5)
+#define PDMA_LRO_RING_AGG               BITS(10,25)
+#define PDMA_LRO_RING_AGG_CNT1          BITS(26,31)
+#define PDMA_LRO_RING_AGG_CNT2          BITS(0,1)
+#define PDMA_LRO_ALT_TICK_TIMER         BITS(16,20)
+#define PDMA_LRO_LRO_MIN_RXD_SDL0       BITS(16,31)
+
+#define PDMA_LRO_DLY_INT_EN_OFFSET          (5)
+#define PDMA_LRO_TPUT_PRE_ADJ_OFFSET        (8)
+#define PDMA_LRO_FREQ_PRI_ADJ_OFFSET    (16)
+#define PDMA_LRO_LRO_MIN_RXD_SDL0_OFFSET    (16)
+#define PDMA_LRO_TPUT_PRI_ADJ_OFFSET        (12)
+#define PDMA_LRO_ALT_SCORE_MODE_OFFSET      (21)
+#define PDMA_LRO_FUSH_REQ_OFFSET            (26)
+#define PDMA_NON_LRO_MULTI_EN_OFFSET        (2)
+#define PDMA_LRO_IPV6_EN_OFFSET             (1)
+#define PDMA_LRO_RXD_PREFETCH_EN_OFFSET     (3)
+#define PDMA_LRO_IPV4_CSUM_UPDATE_EN_OFFSET (7)
+#define PDMA_LRO_IPV4_CTRL_PUSH_EN_OFFSET   (23)
+#define PDMA_LRO_ALT_TICK_TIMER_OFFSET      (16)
+
+#define PDMA_LRO_TPUT_OVERFLOW_ADJ  BITS(12,31)
+#define PDMA_LRO_CNT_OVERFLOW_ADJ   BITS(0,11)
+
+#define PDMA_LRO_TPUT_OVERFLOW_ADJ_OFFSET   (12)
+#define PDMA_LRO_CNT_OVERFLOW_ADJ_OFFSET    (0)
+
+#define PDMA_LRO_ALT_BYTE_CNT_MODE  (0)
+#define PDMA_LRO_ALT_PKT_CNT_MODE   (1)
+
+/* LRO_RX_RING1_CTRL_DW1 offsets  */
+#define PDMA_LRO_AGE_H_OFFSET           (10)
+#define PDMA_LRO_RING_AGE1_OFFSET       (22)
+#define PDMA_LRO_RING_AGG_CNT1_OFFSET   (26)
+/* LRO_RX_RING1_CTRL_DW2 offsets  */
+#define PDMA_RX_MODE_OFFSET             (6)
+#define PDMA_RX_PORT_VALID_OFFSET       (8)
+#define PDMA_RX_MYIP_VALID_OFFSET       (9)
+#define PDMA_LRO_RING_AGE2_OFFSET       (0)
+#define PDMA_LRO_RING_AGG_OFFSET        (10)
+#define PDMA_LRO_RING_AGG_CNT2_OFFSET   (0)
+/* LRO_RX_RING1_CTRL_DW3 offsets  */
+#define PDMA_LRO_AGG_CNT_H_OFFSET       (6)
+/* LRO_RX_RING1_STP_DTP_DW offsets */
+#define PDMA_RX_TCP_SRC_PORT_OFFSET     (16)
+#define PDMA_RX_TCP_DEST_PORT_OFFSET    (0)
+/* LRO_RX_RING1_CTRL_DW0 offsets */
+#define PDMA_RX_IPV4_FORCE_OFFSET       (1)
+#define PDMA_RX_IPV6_FORCE_OFFSET       (0)
+
+#define SET_ADMA_RX_LEN0(x)    ((x)&ADMA_RX_LEN0_MASK)
+#define SET_ADMA_RX_LEN1(x)    ((x)&ADMA_RX_LEN1_MASK)
+
+#define SET_PDMA_LRO_MAX_AGG_CNT(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW3; \
+        *addr &= ~0xff;   \
+        *addr |= ((x) & 0xff);  \
+    }
+#define SET_PDMA_LRO_FLUSH_REQ(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW0; \
+        *addr &= ~PDMA_LRO_FUSH_REQ;   \
+        *addr |= ((x) & 0x7)<<PDMA_LRO_FUSH_REQ_OFFSET;  \
+    }
+#define SET_PDMA_LRO_IPV6_EN(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW0; \
+        *addr &= ~PDMA_LRO_IPV6_EN;   \
+        *addr |= ((x) & 0x1)<<PDMA_LRO_IPV6_EN_OFFSET;  \
+    }
+#if defined(CONFIG_RAETH_HW_LRO_PREFETCH)
+#define SET_PDMA_LRO_RXD_PREFETCH_EN(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW0; \
+        *addr &= ~PDMA_LRO_RXD_PREFETCH_EN;   \
+        *addr |= ((x) & 0x3)<<PDMA_LRO_RXD_PREFETCH_EN_OFFSET;  \
+    }
+#else
+#define SET_PDMA_LRO_RXD_PREFETCH_EN(x)
+#endif
+#define SET_PDMA_LRO_IPV4_CSUM_UPDATE_EN(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW0; \
+        *addr &= ~PDMA_LRO_IPV4_CSUM_UPDATE_EN;   \
+        *addr |= ((x) & 0x1)<<PDMA_LRO_IPV4_CSUM_UPDATE_EN_OFFSET;  \
+    }
+#define SET_PDMA_LRO_IPV4_CTRL_PUSH_EN(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW0; \
+        *addr &= ~PDMA_LRO_IPV4_CTRL_PUSH_EN;   \
+        *addr |= ((x) & 0x1)<<PDMA_LRO_IPV4_CTRL_PUSH_EN_OFFSET;  \
+    }
+#define SET_PDMA_NON_LRO_MULTI_EN(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW0; \
+        *addr &= ~(PDMA_NON_LRO_MULTI_EN);   \
+        *addr |= ((x) & 0x1)<<PDMA_NON_LRO_MULTI_EN_OFFSET;  \
+    }
+#define SET_PDMA_LRO_FREQ_PRI_ADJ(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW0; \
+        *addr &= ~PDMA_LRO_FREQ_PRI_ADJ;   \
+        *addr |= ((x) & 0xf)<<PDMA_LRO_FREQ_PRI_ADJ_OFFSET;  \
+    }
+#define SET_PDMA_LRO_TPUT_PRE_ADJ(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW0; \
+        *addr &= ~PDMA_LRO_TPUT_PRE_ADJ;   \
+        *addr |= ((x) & 0xf)<<PDMA_LRO_TPUT_PRE_ADJ_OFFSET;  \
+    }
+#define SET_PDMA_LRO_TPUT_PRI_ADJ(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW0; \
+        *addr &= ~PDMA_LRO_TPUT_PRI_ADJ;   \
+        *addr |= ((x) & 0xf)<<PDMA_LRO_TPUT_PRI_ADJ_OFFSET;  \
+    }
+#define SET_PDMA_LRO_ALT_SCORE_MODE(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW0; \
+        *addr &= ~PDMA_LRO_ALT_SCORE_MODE;   \
+        *addr |= ((x) & 0x1)<<PDMA_LRO_ALT_SCORE_MODE_OFFSET;  \
+    }
+#define SET_PDMA_LRO_DLY_INT_EN(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW0; \
+        *addr &= ~PDMA_LRO_DLY_INT_EN;   \
+        *addr |= ((x) & 0x1)<<PDMA_LRO_DLY_INT_EN_OFFSET;  \
+    }
+#define SET_PDMA_LRO_BW_THRESHOLD(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW2; \
+        *addr = (x);  \
+    }
+#define SET_PDMA_LRO_MIN_RXD_SDL(x) \
+    { volatile unsigned int *addr = (unsigned int*)ADMA_LRO_CTRL_DW3; \
+        *addr &= ~PDMA_LRO_LRO_MIN_RXD_SDL0;   \
+        *addr |= ((x) & 0xffff)<<PDMA_LRO_LRO_MIN_RXD_SDL0_OFFSET;  \
+    }
+#define SET_PDMA_LRO_TPUT_OVERFLOW_ADJ(x) \
+    { volatile unsigned int *addr = (unsigned int*)PDMA_LRO_ATL_OVERFLOW_ADJ; \
+        *addr &= ~PDMA_LRO_TPUT_OVERFLOW_ADJ;   \
+        *addr |= ((x) & 0xfffff)<<PDMA_LRO_TPUT_OVERFLOW_ADJ_OFFSET;  \
+    }
+#define SET_PDMA_LRO_CNT_OVERFLOW_ADJ(x) \
+    { volatile unsigned int *addr = (unsigned int*)PDMA_LRO_ATL_OVERFLOW_ADJ; \
+        *addr &= ~PDMA_LRO_CNT_OVERFLOW_ADJ;   \
+        *addr |= ((x) & 0xfff)<<PDMA_LRO_CNT_OVERFLOW_ADJ_OFFSET;  \
+    }
+#define SET_PDMA_LRO_ALT_REFRESH_TIMER_UNIT(x) \
+    { volatile unsigned int *addr = (unsigned int*)LRO_ALT_REFRESH_TIMER; \
+        *addr &= ~PDMA_LRO_ALT_TICK_TIMER;   \
+        *addr |= ((x) & 0x1f)<<PDMA_LRO_ALT_TICK_TIMER_OFFSET;  \
+    }
+#define SET_PDMA_LRO_ALT_REFRESH_TIMER(x) \
+    { volatile unsigned int *addr = (unsigned int*)LRO_ALT_REFRESH_TIMER; \
+        *addr &= ~0xffff;   \
+        *addr |= ((x) & 0xffff);  \
+    }
+#define SET_PDMA_LRO_MAX_AGG_TIME(x) \
+    { volatile unsigned int *addr = (unsigned int*)LRO_MAX_AGG_TIME; \
+        *addr &= ~0xffff;   \
+        *addr |= ((x) & 0xffff);  \
+    }
+#define SET_PDMA_RXRING_MODE(x,y) \
+    { volatile unsigned int *addr = (unsigned int*)(LRO_RX_RING0_CTRL_DW2 + ((x) << 6)); \
+        *addr &= ~(0x3<<PDMA_RX_MODE_OFFSET);   \
+        *addr |= (y)<<PDMA_RX_MODE_OFFSET;  \
+    }
+#define SET_PDMA_RXRING_MYIP_VALID(x,y) \
+    { volatile unsigned int *addr = (unsigned int*)(LRO_RX_RING0_CTRL_DW2 + ((x) << 6)); \
+        *addr &= ~(0x1<<PDMA_RX_MYIP_VALID_OFFSET); \
+        *addr |= ((y)&0x1)<<PDMA_RX_MYIP_VALID_OFFSET;    \
+    }
+#define SET_PDMA_RXRING_VALID(x,y) \
+    { volatile unsigned int *addr = (unsigned int*)(LRO_RX_RING0_CTRL_DW2 + ((x) << 6)); \
+        *addr &= ~(0x1<<PDMA_RX_PORT_VALID_OFFSET); \
+        *addr |= ((y)&0x1)<<PDMA_RX_PORT_VALID_OFFSET;    \
+    }
+#define SET_PDMA_RXRING_TCP_SRC_PORT(x,y) \
+    { volatile unsigned int *addr = (unsigned int*)(LRO_RX_RING1_STP_DTP_DW + (((x)-1) << 6)); \
+        *addr &= ~(0xffff<<PDMA_RX_TCP_SRC_PORT_OFFSET);    \
+        *addr |= (y)<<PDMA_RX_TCP_SRC_PORT_OFFSET;    \
+    }
+#define SET_PDMA_RXRING_TCP_DEST_PORT(x,y) \
+    { volatile unsigned int *addr = (unsigned int*)(LRO_RX_RING1_STP_DTP_DW + (((x)-1) << 6)); \
+        *addr &= ~(0xffff<<PDMA_RX_TCP_DEST_PORT_OFFSET);    \
+        *addr |= (y)<<PDMA_RX_TCP_DEST_PORT_OFFSET;    \
+    }
+#define SET_PDMA_RXRING_IPV4_FORCE_MODE(x,y) \
+    { volatile unsigned int *addr = (unsigned int*)(LRO_RX_RING1_CTRL_DW0 + (((x)-1) << 6)); \
+        *addr &= ~(0x1<<PDMA_RX_IPV4_FORCE_OFFSET);    \
+        *addr |= (y)<<PDMA_RX_IPV4_FORCE_OFFSET;    \
+    }
+#define SET_PDMA_RXRING_IPV6_FORCE_MODE(x,y) \
+    { volatile unsigned int *addr = (unsigned int*)(LRO_RX_RING1_CTRL_DW0 + (((x)-1) << 6)); \
+        *addr &= ~(0x1<<PDMA_RX_IPV6_FORCE_OFFSET);    \
+        *addr |= (y)<<PDMA_RX_IPV6_FORCE_OFFSET;    \
+    }
+#define SET_PDMA_RXRING_AGE_TIME(x,y) \
+    { volatile unsigned int *addr1 = (unsigned int*)(LRO_RX_RING0_CTRL_DW1 + ((x) << 6)); \
+      volatile unsigned int *addr2 = (unsigned int*)(LRO_RX_RING0_CTRL_DW2 + ((x) << 6)); \
+        *addr1 &= ~PDMA_LRO_RING_AGE1;    \
+        *addr2 &= ~PDMA_LRO_RING_AGE2;    \
+        *addr1 |= ((y) & 0x3ff)<<PDMA_LRO_RING_AGE1_OFFSET;    \
+        *addr2 |= (((y)>>PDMA_LRO_AGE_H_OFFSET) & 0x03f)<<PDMA_LRO_RING_AGE2_OFFSET;    \
+    }
+#define SET_PDMA_RXRING_AGG_TIME(x,y) \
+    { volatile unsigned int *addr = (unsigned int*)(LRO_RX_RING0_CTRL_DW2 + ((x) << 6)); \
+        *addr &= ~PDMA_LRO_RING_AGG;    \
+        *addr |= ((y) & 0xffff)<<PDMA_LRO_RING_AGG_OFFSET;    \
+    }
+#define SET_PDMA_RXRING_MAX_AGG_CNT(x,y) \
+    { volatile unsigned int *addr1 = (unsigned int*)(LRO_RX_RING1_CTRL_DW2 + (((x)-1) << 6)); \
+      volatile unsigned int *addr2 = (unsigned int*)(LRO_RX_RING1_CTRL_DW3 + (((x)-1) << 6)); \
+        *addr1 &= ~PDMA_LRO_RING_AGG_CNT1;    \
+        *addr2 &= ~PDMA_LRO_RING_AGG_CNT2;    \
+        *addr1 |= ((y) & 0x3f)<<PDMA_LRO_RING_AGG_CNT1_OFFSET;    \
+        *addr2 |= (((y)>>PDMA_LRO_AGG_CNT_H_OFFSET) & 0x03)<<PDMA_LRO_RING_AGG_CNT2_OFFSET;    \
+    }
+
+typedef struct _PDMA_LRO_AUTO_TLB_INFO0_    PDMA_LRO_AUTO_TLB_INFO0_T;
+typedef struct _PDMA_LRO_AUTO_TLB_INFO1_    PDMA_LRO_AUTO_TLB_INFO1_T;
+typedef struct _PDMA_LRO_AUTO_TLB_INFO2_    PDMA_LRO_AUTO_TLB_INFO2_T;
+typedef struct _PDMA_LRO_AUTO_TLB_INFO3_    PDMA_LRO_AUTO_TLB_INFO3_T;
+typedef struct _PDMA_LRO_AUTO_TLB_INFO4_    PDMA_LRO_AUTO_TLB_INFO4_T;
+typedef struct _PDMA_LRO_AUTO_TLB_INFO5_    PDMA_LRO_AUTO_TLB_INFO5_T;
+typedef struct _PDMA_LRO_AUTO_TLB_INFO6_    PDMA_LRO_AUTO_TLB_INFO6_T;
+typedef struct _PDMA_LRO_AUTO_TLB_INFO7_    PDMA_LRO_AUTO_TLB_INFO7_T;
+typedef struct _PDMA_LRO_AUTO_TLB_INFO8_    PDMA_LRO_AUTO_TLB_INFO8_T;
+
+struct _PDMA_LRO_AUTO_TLB_INFO0_
+{
+    unsigned int    DTP         : 16;
+    unsigned int    STP         : 16;
+};
+struct _PDMA_LRO_AUTO_TLB_INFO1_
+{
+    unsigned int    SIP0        : 32;
+};
+struct _PDMA_LRO_AUTO_TLB_INFO2_
+{
+    unsigned int    SIP1        : 32;
+};
+struct _PDMA_LRO_AUTO_TLB_INFO3_
+{
+    unsigned int    SIP2        : 32;
+};
+struct _PDMA_LRO_AUTO_TLB_INFO4_
+{
+    unsigned int    SIP3        : 32;
+};
+struct _PDMA_LRO_AUTO_TLB_INFO5_
+{
+    unsigned int    VLAN_VID0   : 32;
+};
+struct _PDMA_LRO_AUTO_TLB_INFO6_
+{
+    unsigned int    VLAN_VID1       : 16;
+    unsigned int    VLAN_VID_VLD    : 4;
+    unsigned int    CNT             : 12;
+};
+struct _PDMA_LRO_AUTO_TLB_INFO7_
+{
+    unsigned int    DW_LEN          : 32;
+};
+struct _PDMA_LRO_AUTO_TLB_INFO8_
+{
+    unsigned int    DIP_ID          : 2;
+    unsigned int    IPV6            : 1;
+    unsigned int    IPV4            : 1;
+    unsigned int    RESV            : 27;
+    unsigned int    VALID           : 1;
+};
+struct PDMA_LRO_AUTO_TLB_INFO {
+	PDMA_LRO_AUTO_TLB_INFO0_T auto_tlb_info0;
+	PDMA_LRO_AUTO_TLB_INFO1_T auto_tlb_info1;
+	PDMA_LRO_AUTO_TLB_INFO2_T auto_tlb_info2;
+	PDMA_LRO_AUTO_TLB_INFO3_T auto_tlb_info3;
+    PDMA_LRO_AUTO_TLB_INFO4_T auto_tlb_info4;
+    PDMA_LRO_AUTO_TLB_INFO5_T auto_tlb_info5;
+    PDMA_LRO_AUTO_TLB_INFO6_T auto_tlb_info6;
+    PDMA_LRO_AUTO_TLB_INFO7_T auto_tlb_info7;
+    PDMA_LRO_AUTO_TLB_INFO8_T auto_tlb_info8;
+};
+
+#if defined (CONFIG_HW_SFQ)
+#define VQTX_TB_BASE0 (ETHDMASYS_FRAME_ENGINE_BASE + 0x1980)
+#define VQTX_TB_BASE1 (ETHDMASYS_FRAME_ENGINE_BASE + 0x1984)
+#define VQTX_TB_BASE2 (ETHDMASYS_FRAME_ENGINE_BASE + 0x1988)
+#define VQTX_TB_BASE3 (ETHDMASYS_FRAME_ENGINE_BASE + 0x198C)
+#define SFQ_OFFSET 0x1A80
+#define VQTX_GLO (ETHDMASYS_FRAME_ENGINE_BASE + SFQ_OFFSET)
+#define VQTX_INVLD_PTR (ETHDMASYS_FRAME_ENGINE_BASE + SFQ_OFFSET + 0x0C)
+#define VQTX_NUM (ETHDMASYS_FRAME_ENGINE_BASE + SFQ_OFFSET + 0x10)
+#define VQTX_SCH (ETHDMASYS_FRAME_ENGINE_BASE + SFQ_OFFSET + 0x18)
+#define VQTX_HASH_CFG (ETHDMASYS_FRAME_ENGINE_BASE + SFQ_OFFSET + 0x20)
+#define VQTX_HASH_SD (ETHDMASYS_FRAME_ENGINE_BASE + SFQ_OFFSET + 0x24)
+#define VQTX_VLD_CFG (ETHDMASYS_FRAME_ENGINE_BASE + SFQ_OFFSET + 0x30)
+#define VQTX_MIB_IF (ETHDMASYS_FRAME_ENGINE_BASE + SFQ_OFFSET + 0x3C)
+#define VQTX_MIB_PCNT (ETHDMASYS_FRAME_ENGINE_BASE + SFQ_OFFSET + 0x40)
+#define VQTX_MIB_BCNT0 (ETHDMASYS_FRAME_ENGINE_BASE + SFQ_OFFSET + 0x44)
+#define VQTX_MIB_BCNT1 (ETHDMASYS_FRAME_ENGINE_BASE + SFQ_OFFSET + 0x48)
+
+#define VQTX_MIB_EN (1<<17) 
+#define VQTX_NUM_0  (4<<0)
+#define VQTX_NUM_1  (4<<4)
+#define VQTX_NUM_2  (4<<8)
+#define VQTX_NUM_3  (4<<12)
+
+/*=========================================
+      SFQ Table Format define
+=========================================*/
+typedef struct _SFQ_INFO1_  SFQ_INFO1_T;
+
+struct _SFQ_INFO1_
+{
+    unsigned int    VQHPTR;
+};
+//-------------------------------------------------
+typedef struct _SFQ_INFO2_    SFQ_INFO2_T;
+
+struct _SFQ_INFO2_
+{
+    unsigned int    VQTPTR;
+};
+//-------------------------------------------------
+typedef struct _SFQ_INFO3_  SFQ_INFO3_T;
+
+struct _SFQ_INFO3_
+{
+    unsigned int    QUE_DEPTH:16;
+    unsigned int    DEFICIT_CNT:16;
+};
+//-------------------------------------------------
+typedef struct _SFQ_INFO4_    SFQ_INFO4_T;
+
+struct _SFQ_INFO4_
+{
+	unsigned int    RESV; 
+};
+//-------------------------------------------------
+
+typedef struct _SFQ_INFO5_    SFQ_INFO5_T;
+
+struct _SFQ_INFO5_
+{
+	unsigned int    PKT_CNT; 
+};
+//-------------------------------------------------
+
+typedef struct _SFQ_INFO6_    SFQ_INFO6_T;
+
+struct _SFQ_INFO6_
+{
+	unsigned int    BYTE_CNT; 
+};
+//-------------------------------------------------
+
+typedef struct _SFQ_INFO7_    SFQ_INFO7_T;
+
+struct _SFQ_INFO7_
+{
+	unsigned int    BYTE_CNT; 
+};
+//-------------------------------------------------
+
+typedef struct _SFQ_INFO8_    SFQ_INFO8_T;
+
+struct _SFQ_INFO8_
+{
+		unsigned int    RESV; 
+};
+
+
+struct SFQ_table {
+	SFQ_INFO1_T sfq_info1;
+	SFQ_INFO2_T sfq_info2;
+	SFQ_INFO3_T sfq_info3;
+	SFQ_INFO4_T sfq_info4;
+  SFQ_INFO5_T sfq_info5;
+	SFQ_INFO6_T sfq_info6;
+	SFQ_INFO7_T sfq_info7;
+	SFQ_INFO8_T sfq_info8;
+
+};
+#endif
+#if defined (CONFIG_RAETH_HW_LRO) || defined (CONFIG_RAETH_MULTIPLE_RX_RING)
+#define FE_GDM_RXID1_OFFSET        (0x0130)
+#define FE_GDM_RXID1               (RALINK_FRAME_ENGINE_BASE+FE_GDM_RXID1_OFFSET)
+#define GDM_VLAN_PRI7_RXID_SEL     BITS(30,31)
+#define GDM_VLAN_PRI6_RXID_SEL     BITS(28,29)
+#define GDM_VLAN_PRI5_RXID_SEL     BITS(26,27)
+#define GDM_VLAN_PRI4_RXID_SEL     BITS(24,25)
+#define GDM_VLAN_PRI3_RXID_SEL     BITS(22,23)
+#define GDM_VLAN_PRI2_RXID_SEL     BITS(20,21)
+#define GDM_VLAN_PRI1_RXID_SEL     BITS(18,19)
+#define GDM_VLAN_PRI0_RXID_SEL     BITS(16,17)
+#define GDM_TCP_ACK_RXID_SEL       BITS(4,5)
+#define GDM_TCP_ACK_WZPC           BIT(3)
+#define GDM_RXID_PRI_SEL           BITS(0,2)
+
+#define FE_GDM_RXID2_OFFSET        (0x0134)
+#define FE_GDM_RXID2               (RALINK_FRAME_ENGINE_BASE+FE_GDM_RXID2_OFFSET)
+#define GDM_STAG7_RXID_SEL         BITS(30,31)
+#define GDM_STAG6_RXID_SEL         BITS(28,29)
+#define GDM_STAG5_RXID_SEL         BITS(26,27)
+#define GDM_STAG4_RXID_SEL         BITS(24,25)
+#define GDM_STAG3_RXID_SEL         BITS(22,23)
+#define GDM_STAG2_RXID_SEL         BITS(20,21)
+#define GDM_STAG1_RXID_SEL         BITS(18,19)
+#define GDM_STAG0_RXID_SEL         BITS(16,17)
+#define GDM_PID2_RXID_SEL          BITS(2,3)
+#define GDM_PID1_RXID_SEL          BITS(0,1)
+
+#define GDM_PRI_PID              (0)
+#define GDM_PRI_VLAN_PID         (1)
+#define GDM_PRI_ACK_PID          (2)
+#define GDM_PRI_VLAN_ACK_PID     (3)
+#define GDM_PRI_ACK_VLAN_PID     (4)
+
+#define SET_GDM_VLAN_PRI_RXID_SEL(x,y) \
+    { volatile unsigned int *addr = (unsigned int *)FE_GDM_RXID1; \
+        *addr &= ~(0x03 << (((x) << 1)+16));    \
+        *addr |= ((y) & 0x3) << (((x) << 1)+16); \
+    }
+#define SET_GDM_TCP_ACK_RXID_SEL(x) \
+    { volatile unsigned int *addr = (unsigned int *)FE_GDM_RXID1; \
+        *addr &= ~(GDM_TCP_ACK_RXID_SEL);    \
+        *addr |= ((x) & 0x3) << 4; \
+    }
+#define SET_GDM_TCP_ACK_WZPC(x) \
+    { volatile unsigned int *addr = (unsigned int *)FE_GDM_RXID1; \
+        *addr &= ~(GDM_TCP_ACK_WZPC);    \
+        *addr |= ((x) & 0x1) << 3; \
+    }
+#define SET_GDM_RXID_PRI_SEL(x) \
+    { volatile unsigned int *addr = (unsigned int *)FE_GDM_RXID1; \
+        *addr &= ~(GDM_RXID_PRI_SEL);    \
+        *addr |= (x) & 0x7; \
+    }
+#define GDM_STAG_RXID_SEL(x,y) \
+    { volatile unsigned int *addr = (unsigned int *)FE_GDM_RXID2; \
+        *addr &= ~(0x03 << (((x) << 1)+16));    \
+        *addr |= ((y) & 0x3) << (((x) << 1)+16); \
+    }
+#define SET_GDM_PID2_RXID_SEL(x) \
+    { volatile unsigned int *addr = (unsigned int *)FE_GDM_RXID2; \
+        *addr &= ~(GDM_PID2_RXID_SEL);    \
+        *addr |= ((x) & 0x3) << 2; \
+    }
+#define SET_GDM_PID1_RXID_SEL(x) \
+    { volatile unsigned int *addr = (unsigned int *)FE_GDM_RXID2; \
+        *addr &= ~(GDM_PID1_RXID_SEL);    \
+        *addr |= ((x) & 0x3); \
+    }
+#endif  /* CONFIG_RAETH_MULTIPLE_RX_RING */
 /* Per Port Packet Counts in RT3052, added by bobtseng 2009.4.17. */
 #define	PORT0_PKCOUNT		(0xb01100e8)
 #define	PORT1_PKCOUNT		(0xb01100ec)
@@ -662,10 +1274,10 @@ typedef struct _PSEUDO_ADAPTER {
 #define	PORT4_PKCOUNT		(0xb01100f8)
 #define	PORT5_PKCOUNT		(0xb01100fc)
 
-#if defined (CONFIG_ARCH_MT8590)
+#if defined (CONFIG_ARCH_MT7623)
 #include <mach/sync_write.h>
 #define sysRegRead(phys)            (*(volatile unsigned int *)((phys)))
-#define sysRegWrite(phys, val)      mt65xx_reg_sync_writel((phys), (val))
+#define sysRegWrite(phys, val)      mt65xx_reg_sync_writel((val), (phys))
 #else
 #define PHYS_TO_K1(physaddr) KSEG1ADDR(physaddr)
 #define sysRegRead(phys)        (*(volatile unsigned int *)PHYS_TO_K1(phys))
@@ -688,7 +1300,7 @@ typedef struct _PSEUDO_ADAPTER {
 #define GDM1_JMB_EN   	   (0x1 << 19)
 #define GDM1_STRPCRC   	   (0x1 << 16)
 #define GDM1_UFRC_P_CPU     (0 << 12)
-#if defined (CONFIG_RALINK_MT7621)
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 #define GDM1_UFRC_P_PPE     (4 << 12)
 #else
 #define GDM1_UFRC_P_PPE     (6 << 12)
@@ -696,7 +1308,7 @@ typedef struct _PSEUDO_ADAPTER {
 
 //GDMA1 broad-cast MAC address frames
 #define GDM1_BFRC_P_CPU     (0 << 8)
-#if defined (CONFIG_RALINK_MT7621)
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 #define GDM1_BFRC_P_PPE     (4 << 8)
 #else
 #define GDM1_BFRC_P_PPE     (6 << 8)
@@ -704,7 +1316,7 @@ typedef struct _PSEUDO_ADAPTER {
 
 //GDMA1 multi-cast MAC address frames
 #define GDM1_MFRC_P_CPU     (0 << 4)
-#if defined (CONFIG_RALINK_MT7621)
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 #define GDM1_MFRC_P_PPE     (4 << 4)
 #else
 #define GDM1_MFRC_P_PPE     (6 << 4)
@@ -712,13 +1324,13 @@ typedef struct _PSEUDO_ADAPTER {
 
 //GDMA1 other MAC address frames destination port
 #define GDM1_OFRC_P_CPU     (0 << 0)
-#if defined (CONFIG_RALINK_MT7621)
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 #define GDM1_OFRC_P_PPE     (4 << 0)
 #else
 #define GDM1_OFRC_P_PPE     (6 << 0)
 #endif
 
-#if defined (CONFIG_RALINK_RT6856) || defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621)
+#if defined (CONFIG_RALINK_RT6856) || defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 /* checksum generator registers are removed */
 #define ICS_GEN_EN          (0 << 2)
 #define UCS_GEN_EN          (0 << 1)
@@ -741,6 +1353,8 @@ typedef struct _PSEUDO_ADAPTER {
 /* ====================================== */
 #define PSE_RESET       BIT(0)
 /* ====================================== */
+#define PST_DRX_IDX3       BIT(19)
+#define PST_DRX_IDX2       BIT(18)
 #define PST_DRX_IDX1       BIT(17)
 #define PST_DRX_IDX0       BIT(16)
 #define PST_DTX_IDX3       BIT(3)
@@ -760,6 +1374,11 @@ typedef struct _PSEUDO_ADAPTER {
 #define PDMA_BT_SIZE_8DWORDS     (1<<4)
 #define PDMA_BT_SIZE_16DWORDS    (2<<4)
 #define PDMA_BT_SIZE_32DWORDS    (3<<4)
+
+#define ADMA_RX_BT_SIZE_4DWORDS		(0<<11)
+#define ADMA_RX_BT_SIZE_8DWORDS		(1<<11)
+#define ADMA_RX_BT_SIZE_16DWORDS	(2<<11)
+#define ADMA_RX_BT_SIZE_32DWORDS	(3<<11)
 
 /* Register bits.
  */
@@ -839,8 +1458,14 @@ typedef struct _PDMA_RXD_INFO2_    PDMA_RXD_INFO2_T;
 
 struct _PDMA_RXD_INFO2_
 {
+#if defined (CONFIG_ARCH_MT7623)
+    unsigned int    PLEN1                 : 2;
+    unsigned int    LRO_AGG_CNT           : 8;
+    unsigned int    REV                   : 5;
+#else
     unsigned int    PLEN1                 : 14;
     unsigned int    LS1                   : 1;
+#endif  /* CONFIG_RAETH_HW_LRO */
     unsigned int    TAG                   : 1;
     unsigned int    PLEN0                 : 14;
     unsigned int    LS0                   : 1;
@@ -870,7 +1495,7 @@ struct _PDMA_RXD_INFO4_
     unsigned int    IP4			: 1;
     unsigned int    IP6			: 1;
     unsigned int    UN_USE1		: 4;
-#elif defined (CONFIG_RALINK_MT7621)
+#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
     unsigned int    FOE_Entry           : 14;
     unsigned int    CRSN		: 5;
     unsigned int    SP			: 4;
@@ -952,7 +1577,7 @@ struct _PDMA_TXD_INFO4_
     unsigned int    FP_BMAP            	: 8;
     unsigned int    TSO			: 1;
     unsigned int    TUI_CO		: 3;
-#elif defined (CONFIG_RALINK_MT7621)
+#elif defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
     unsigned int    VLAN_TAG		:17; // INSV(1)+VPRI(3)+CFI(1)+VID(12)
     unsigned int    RESV                : 2;
     unsigned int    UDF                 : 6;
@@ -990,7 +1615,7 @@ struct PDMA_txdesc {
 };
 
 
-#if defined (CONFIG_RALINK_MT7621)
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 /*=========================================
       QDMA TX Descriptor Format define
 =========================================*/
@@ -1014,7 +1639,13 @@ typedef struct _QDMA_TXD_INFO3_  QDMA_TXD_INFO3_T;
 struct _QDMA_TXD_INFO3_
 {
     unsigned int    QID                   : 4;
+#if defined (CONFIG_HW_SFQ)
+    //unsigned int    VQID                  : 10;  
+    unsigned int    PROT                   : 3;
+    unsigned int    IPOFST                   : 7;		
+#else
     unsigned int    RESV                  : 10;
+#endif
     unsigned int    SWC_bit               : 1;	
     unsigned int    BURST_bit             : 1;
     unsigned int    SDL                   : 14;
@@ -1027,8 +1658,13 @@ typedef struct _QDMA_TXD_INFO4_    QDMA_TXD_INFO4_T;
 struct _QDMA_TXD_INFO4_
 {
     unsigned int    VLAN_TAG		:17; // INSV(1)+VPRI(3)+CFI(1)+VID(12)
+#if defined (CONFIG_RALINK_MT7621)
     unsigned int    RESV                : 2;
     unsigned int    UDF                 : 6;
+#elif defined(CONFIG_ARCH_MT7623)
+	  unsigned int    VQID0               : 1;
+	  unsigned int    RESV                : 7;
+#endif
     unsigned int    FPORT               : 3;
     unsigned int    TSO			: 1;
     unsigned int    TUI_CO		: 3;
@@ -1049,7 +1685,11 @@ struct QDMA_txdesc {
 };
 #endif
 
+#if defined (CONFIG_ARCH_MT7623)
+#define phys_to_bus(a) (a)
+#else
 #define phys_to_bus(a) (a & 0x1FFFFFFF)
+#endif
 
 #define PHY_Enable_Auto_Nego		0x1000
 #define PHY_Restart_Auto_Nego		0x0200
@@ -1067,7 +1707,8 @@ struct QDMA_txdesc {
 /* proc definition */
 
 #if !defined (CONFIG_RALINK_RT6855) && !defined(CONFIG_RALINK_RT6855A) && \
-    !defined (CONFIG_RALINK_MT7620) && !defined (CONFIG_RALINK_MT7621) 
+    !defined (CONFIG_RALINK_MT7620) && !defined (CONFIG_RALINK_MT7621) && \
+    !defined (CONFIG_ARCH_MT7623)
 #define CDMA_OQ_STA	(RALINK_FRAME_ENGINE_BASE+RAPSE_OFFSET+0x4c)
 #define GDMA1_OQ_STA	(RALINK_FRAME_ENGINE_BASE+RAPSE_OFFSET+0x50)
 #define PPE_OQ_STA	(RALINK_FRAME_ENGINE_BASE+RAPSE_OFFSET+0x54)
@@ -1075,37 +1716,28 @@ struct QDMA_txdesc {
 #endif
 
 #define PROCREG_CONTROL_FILE      "/var/run/procreg_control"
-#if defined (CONFIG_RALINK_RT2880)
-#define PROCREG_DIR             "rt2880"
-#elif defined (CONFIG_RALINK_RT3052)
-#define PROCREG_DIR             "rt3052"
-#elif defined (CONFIG_RALINK_RT3352)
-#define PROCREG_DIR             "rt3352"
-#elif defined (CONFIG_RALINK_RT5350)
-#define PROCREG_DIR             "rt5350"
-#elif defined (CONFIG_RALINK_RT2883)
-#define PROCREG_DIR             "rt2883"
-#elif defined (CONFIG_RALINK_RT3883)
-#define PROCREG_DIR             "rt3883"
-#elif defined (CONFIG_RALINK_RT6855)
-#define PROCREG_DIR             "rt6855"
-#elif defined (CONFIG_RALINK_MT7620)
+#if   defined (CONFIG_RALINK_MT7620)
 #define PROCREG_DIR             "mt7620"
 #elif defined (CONFIG_RALINK_MT7621)
 #define PROCREG_DIR             "mt7621"
+#elif defined (CONFIG_ARCH_MT7623)
+#define PROCREG_DIR             "mt7623"
 #elif defined (CONFIG_RALINK_MT7628)
 #define PROCREG_DIR             "mt7628"
-#elif defined (CONFIG_RALINK_RT6855A)
-#define PROCREG_DIR             "rt6855a"
 #else
 #define PROCREG_DIR             "rt2880"
 #endif
 #define PROCREG_SKBFREE		"skb_free"
 #define PROCREG_TXRING		"tx_ring"
 #define PROCREG_RXRING		"rx_ring"
+#define PROCREG_RXRING1		"rx_ring1"
+#define PROCREG_RXRING2		"rx_ring2"
+#define PROCREG_RXRING3		"rx_ring3"
 #define PROCREG_NUM_OF_TXD	"num_of_txd"
 #define PROCREG_TSO_LEN		"tso_len"
 #define PROCREG_LRO_STATS	"lro_stats"
+#define PROCREG_HW_LRO_STATS	"hw_lro_stats"
+#define PROCREG_HW_LRO_AUTO_TLB	"hw_lro_auto_tlb"
 #define PROCREG_GMAC		"gmac"
 #define PROCREG_GMAC2           "gmac2"
 #define PROCREG_CP0		"cp0"
@@ -1122,7 +1754,12 @@ struct QDMA_txdesc {
 #define PROCREG_SCHE		"schedule"
 #endif
 #define PROCREG_QDMA            "qdma"
-
+#if defined(CONFIG_RAETH_PDMA_DVT)
+#define PROCREG_PDMA_DVT		"pdma_dvt"
+#endif  //#if defined(CONFIG_RAETH_PDMA_DVT)
+#if defined(CONFIG_RAETH_INT_DBG)
+#define PROCREG_INT_DBG		"int_dbg"
+#endif
 struct rt2880_reg_op_data {
   char	name[64];
   unsigned int reg_addr;
@@ -1144,8 +1781,39 @@ struct lro_para_struct {
 #endif // CONFIG_RAETH_LRO //
 
 
+#if defined (CONFIG_HW_SFQ)
+typedef struct {
+	//layer2 header
+	uint8_t dmac[6];
+	uint8_t smac[6];
 
+	//vlan header 
+	uint16_t vlan_tag;
+	uint16_t vlan1_gap;
+	uint16_t vlan1;
+	uint16_t vlan2_gap;
+	uint16_t vlan2;
+	uint16_t vlan_layer;
 
+	//pppoe header
+	uint32_t pppoe_gap;
+	uint16_t ppp_tag;
+	uint16_t pppoe_sid;
+
+	//layer3 header
+	uint16_t eth_type;
+	struct iphdr iph;
+	struct ipv6hdr ip6h;
+
+	//layer4 header
+	struct tcphdr th;
+	struct udphdr uh;
+
+	uint32_t pkt_type;
+	uint8_t is_mcast;
+
+} ParseResult;
+#endif
 typedef struct end_device
 {
 
@@ -1173,14 +1841,18 @@ typedef struct end_device
     unsigned int phy_free_page_head;
     struct PDMA_rxdesc *qrx_ring;
     unsigned int phy_qrx_ring;
+#ifdef CONFIG_RAETH_PDMATX_QDMARX	/* QDMA RX */
+    unsigned int phy_tx_ring0;
+#endif
 #endif
 
-    unsigned int	phy_rx_ring0, phy_rx_ring1;
+    unsigned int	phy_rx_ring0, phy_rx_ring1, phy_rx_ring2, phy_rx_ring3;
 
 #if defined (CONFIG_RALINK_RT3052) || defined (CONFIG_RALINK_RT3352) || \
     defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_RT6855) || \
     defined(CONFIG_RALINK_RT6855A) || defined (CONFIG_RALINK_MT7620) || \
-    defined(CONFIG_RALINK_MT7621) || defined (CONFIG_RALINK_MT7628)
+    defined(CONFIG_RALINK_MT7621) || defined (CONFIG_RALINK_MT7628)  || \
+    defined (CONFIG_ARCH_MT7623)
     //send signal to user application to notify link status changed
     struct work_struct  kill_sig_wq;
 #endif
@@ -1214,9 +1886,22 @@ typedef struct end_device
 #endif
     struct PDMA_rxdesc *rx_ring0;
     struct sk_buff     *netrx0_skbuf[NUM_RX_DESC];
-#if defined (CONFIG_RAETH_MULTIPLE_RX_RING)
+#if defined (CONFIG_RAETH_HW_LRO)
+    struct PDMA_rxdesc *rx_ring3;
+    struct sk_buff     *netrx3_skbuf[NUM_RX_DESC];
+    struct PDMA_rxdesc *rx_ring2;
+    struct sk_buff     *netrx2_skbuf[NUM_RX_DESC];
     struct PDMA_rxdesc *rx_ring1;
     struct sk_buff     *netrx1_skbuf[NUM_RX_DESC];
+#elif defined (CONFIG_RAETH_MULTIPLE_RX_RING)
+    struct PDMA_rxdesc *rx_ring1;
+    struct sk_buff     *netrx1_skbuf[NUM_RX_DESC];
+#if defined(CONFIG_ARCH_MT7623)
+    struct PDMA_rxdesc *rx_ring2;
+    struct sk_buff     *netrx2_skbuf[NUM_RX_DESC];
+    struct PDMA_rxdesc *rx_ring3;
+    struct sk_buff     *netrx3_skbuf[NUM_RX_DESC];
+#endif  /* CONFIG_ARCH_MT7623 */
 #endif
 #ifdef CONFIG_RAETH_NAPI
     atomic_t irq_sem;
@@ -1239,6 +1924,20 @@ typedef struct end_device
 #ifdef CONFIG_RAETH_HW_VLAN_RX
     struct vlan_group *vlgrp;
 #endif
+#if defined (CONFIG_RAETH_HW_LRO)
+    struct work_struct hw_lro_wq;
+    unsigned int hw_lro_pkt_interval[3];
+    unsigned int hw_lro_alpha;  /* 0 < packet interval alpha <= 10 */
+    unsigned int hw_lro_fix_setting;  /* 0: dynamical AGG/AGE time, 1: fixed AGG/AGE time */
+    unsigned int hw_lro_sdl_size;
+#endif  /* CONFIG_RAETH_HW_LRO */
+#ifndef CONFIG_MIPS    
+    unsigned int irq0;
+#if defined (CONFIG_RAETH_TX_RX_INT_SEPARATION)
+    unsigned int irq1;
+    unsigned int irq2;
+#endif
+#endif
 } END_DEVICE, *pEND_DEVICE;
 
 
@@ -1247,10 +1946,30 @@ typedef struct end_device
 #endif
 
 #define DMA_GLO_CFG PDMA_GLO_CFG
+
+#if defined(CONFIG_RAETH_QDMATX_QDMARX) 
+#define GDMA1_FWD_PORT 0x5555
+#define GDMA2_FWD_PORT 0x5555
+#elif defined(CONFIG_RAETH_PDMATX_QDMARX)
+#define GDMA1_FWD_PORT 0x5555
+#define GDMA2_FWD_PORT 0x5555
+#else
 #define GDMA1_FWD_PORT 0x0000
 #define GDMA2_FWD_PORT 0x0000
+#endif
+
+#if defined(CONFIG_RAETH_QDMATX_QDMARX) 
+#define RAETH_RX_CALC_IDX0 QRX_CRX_IDX_0
+#define RAETH_RX_CALC_IDX1 QRX_CRX_IDX_1
+#elif defined(CONFIG_RAETH_PDMATX_QDMARX) 
+#define RAETH_RX_CALC_IDX0 QRX_CRX_IDX_0
+#define RAETH_RX_CALC_IDX1 QRX_CRX_IDX_1
+#else
 #define RAETH_RX_CALC_IDX0 RX_CALC_IDX0
 #define RAETH_RX_CALC_IDX1 RX_CALC_IDX1
+#endif
+#define RAETH_RX_CALC_IDX2 RX_CALC_IDX2
+#define RAETH_RX_CALC_IDX3 RX_CALC_IDX3
 #define RAETH_FE_INT_STATUS FE_INT_STATUS
 #define RAETH_FE_INT_ALL FE_INT_ALL
 #define RAETH_FE_INT_ENABLE FE_INT_ENABLE

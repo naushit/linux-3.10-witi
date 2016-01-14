@@ -40,6 +40,14 @@
 #include <net/route.h>
 #include <net/gre.h>
 
+#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
+/*for FP*/
+uint32_t sync_tx_sequence = 0;
+uint32_t pptp_fast_path = 0;
+EXPORT_SYMBOL(sync_tx_sequence); 
+EXPORT_SYMBOL(pptp_fast_path); 
+extern uint32_t l2tp_fast_path;
+#endif
 #include <linux/uaccess.h>
 
 #define PPTP_DRIVER_VERSION "0.8.5"
@@ -244,7 +252,12 @@ static int pptp_xmit(struct ppp_channel *chan, struct sk_buff *skb)
 	hdr->call_id     = htons(opt->dst_addr.call_id);
 
 	hdr->flags      |= PPTP_GRE_FLAG_S;
+#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
+	hdr->seq    = htonl(++sync_tx_sequence);
+	opt->seq_sent = sync_tx_sequence;
+#else
 	hdr->seq         = htonl(++opt->seq_sent);
+#endif
 	if (opt->ack_sent != seq_recv)	{
 		/* send ack with this message */
 		hdr->ver |= PPTP_GRE_FLAG_A;
@@ -343,11 +356,19 @@ static int pptp_rcv_core(struct sock *sk, struct sk_buff *skb)
 
 	payload = skb->data + headersize;
 	/* check for expected sequence number */
+#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
+	if ( time_before(seq , opt->seq_recv + 1) || WRAPPED(opt->seq_recv, seq) ){
+#else
 	if (seq < opt->seq_recv + 1 || WRAPPED(opt->seq_recv, seq)) {
+#endif
 		if ((payload[0] == PPP_ALLSTATIONS) && (payload[1] == PPP_UI) &&
 				(PPP_PROTOCOL(payload) == PPP_LCP) &&
-				((payload[4] == PPP_LCP_ECHOREQ) || (payload[4] == PPP_LCP_ECHOREP)))
+		     ((payload[4] == PPP_LCP_ECHOREQ) || (payload[4] == PPP_LCP_ECHOREP)) ){
+#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
+			opt->seq_recv = seq; //set sequence back.
+#endif
 			goto allow_packet;
+		}
 	} else {
 		opt->seq_recv = seq;
 allow_packet:
@@ -540,6 +561,9 @@ static int pptp_release(struct socket *sock)
 
 	pppox_unbind_sock(sk);
 	sk->sk_state = PPPOX_DEAD;
+#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
+	pptp_fast_path = 0;
+#endif
 
 	sock_orphan(sk);
 	sock->sk = NULL;
@@ -587,7 +611,12 @@ static int pptp_create(struct net *net, struct socket *sock)
 
 	opt->seq_sent = 0; opt->seq_recv = 0xffffffff;
 	opt->ack_recv = 0; opt->ack_sent = 0xffffffff;
-
+#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
+       sync_tx_sequence = 0;
+       pptp_fast_path = 1;
+       l2tp_fast_path = 0;
+       printk("set pptp_fast_path = 1\n!!");
+#endif
 	error = 0;
 out:
 	return error;

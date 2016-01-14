@@ -15,9 +15,13 @@
 #define RAETH_QDMA_READ_CPU_CLK         0x89FB
 #define RAETH_MII_READ_CL45             0x89FC
 #define RAETH_MII_WRITE_CL45            0x89FD
+#if defined(CONFIG_HW_SFQ)
+#define RAETH_QDMA_SFQ_WEB_ENABLE       0x89FE
+#endif
 
 #if defined (CONFIG_RALINK_RT6855) || defined(CONFIG_RALINK_RT6855A) || \
-    defined (CONFIG_RALINK_MT7620) || defined(CONFIG_RALINK_MT7621)
+    defined (CONFIG_RALINK_MT7620) || defined(CONFIG_RALINK_MT7621) || \
+    defined (CONFIG_ARCH_MT7623)
 
 #define REG_ESW_WT_MAC_MFC              0x10
 #define REG_ESW_ISC                     0x18

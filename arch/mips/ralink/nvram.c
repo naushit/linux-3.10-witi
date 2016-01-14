@@ -4,6 +4,8 @@
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/fs.h>
+#include <linux/uaccess.h>
+
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35)
 #include <linux/slab.h>
 #endif
@@ -12,40 +14,38 @@
 #include <linux/devfs_fs_kernel.h>
 static  devfs_handle_t devfs_handle;
 #endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+#include <linux/cdev.h>
+#include <linux/device.h>
+#endif
 
 #include "nvram.h"
 #ifdef CONFIG_CONFIG_SHRINK
 #include "hash_utils.h"
-
-typedef struct hash_info_s{
-	int initFlag;
-	int hashFbIdx;
-}hash_info_t;
+#define CONFIGFB_MATCH(i) (RT2860_NVRAM == i)?(1):(0)
+/*If index == RT2860, the memory size have to be enlarged since VoIP+AP SoC configuration*/
+#define ENLARGED_DATE_SIZE(i,a,b) (CONFIGFB_MATCH(i))?(a*4-b):(a-b)
 #endif
 
 static unsigned long counter = 0;
 
-extern int ra_mtd_write_nm(char *name, loff_t to, size_t len, const u_char *buf);
-extern int ra_mtd_read_nm(char *name, loff_t from, size_t len, u_char *buf);
-
 static int init_nvram_block(int index);
 static int ra_nvram_close(int index);
-#ifdef CONFIG_CONFIG_SHRINK
-static int hashFb_idx_ret(char *name);
-static int configFb_match(int index);
-#endif
 char const *nvram_get(int index, char *name);
 int nvram_getall(int index, char *buf);
 int nvram_set(int index, char *name, char *value);
 int nvram_commit(int index);
 int nvram_clear(int index);
 
+#if defined (CONFIG_ARCH_MT7623)
+static int ralink_nvram_major = 265;
+#else
 static int ralink_nvram_major = 251;
+#endif
 char ra_nvram_debug = 0;
 
 #ifdef CONFIG_CONFIG_SHRINK
 hashTb_funcSet_t ghashTbFuncSet;
-hash_info_t ghashInfo;
 #endif
 
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,36)
@@ -54,6 +54,8 @@ hash_info_t ghashInfo;
 	static DEFINE_SEMAPHORE(nvram_sem);
 #endif
 
+extern int ra_mtd_write_nm(char *name, loff_t to, size_t len, const u_char *buf);
+extern int ra_mtd_read_nm(char *name, loff_t from, size_t len, u_char *buf);
 static block_t fb[FLASH_BLOCK_NUM+EXTEND_BLOCK_NUM] =
 {
 #ifdef CONFIG_DUAL_IMAGE
@@ -186,11 +188,29 @@ uint32_t nv_crc32(uint32_t crc, const char *buf, uint32_t len)
 
 int ralink_nvram_open(struct inode *inode, struct file *file)
 {
+	int i;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
 	MOD_INC_USE_COUNT;
 #else
 	try_module_get(THIS_MODULE);
 #endif
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,36)
+	init_MUTEX(&nvram_sem);
+#else
+  sema_init(&nvram_sem,1);  
+#endif
+	down(&nvram_sem);
+
+#ifdef CONFIG_CONFIG_SHRINK
+	if(!hash_funcSet_reg(&ghashTbFuncSet))
+		return (-1);
+#endif
+
+	for (i = 0; i < FLASH_BLOCK_NUM+EXTEND_BLOCK_NUM; i++){
+		init_nvram_block(i);
+	}
+
+	up(&nvram_sem);
 	return 0;
 }
 
@@ -231,8 +251,11 @@ int ralink_nvram_ioctl(struct inode *inode, struct file *file, unsigned int req,
 	case RALINK_NVRAM_IOCTL_GETALL:
 		nvr = (nvram_ioctl_t __user *)arg;
 		index = nvr->index;
+#ifdef CONFIG_CONFIG_SHRINK
+		len = ENLARGED_DATE_SIZE(index,fb[index].flash_max_len,sizeof(fb[index].env.crc));
+#else
 		len = fb[index].flash_max_len - sizeof(fb[index].env.crc);
-			
+#endif
 		if (nvram_getall(index, fb[index].env.data) == 0) {
 			if (copy_to_user(nvr->value, fb[index].env.data, len))
 				return -EFAULT;
@@ -279,13 +302,50 @@ struct file_operations ralink_nvram_fops =
 	release:	ralink_nvram_release,
 };
 
-int __init ra_nvram_init(void)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+static dev_t nvram_dev;
+static struct cdev nvram_cdev;
+static struct class *nvram_class = NULL;
+#endif
+int ra_nvram_init(void)
 {
-	int i;
 #ifndef  CONFIG_DEVFS_FS
 	int r = 0;
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+	dev_t dev = MKDEV(ralink_nvram_major, 0);
+	int alloc_ret = 0;
+	int cdev_err = 0;
+	int major = 0;
+	struct device *class_dev = NULL;
+
+	alloc_ret = alloc_chrdev_region(&dev, 0, 1, RALINK_NVRAM_DEVNAME);
+	if (alloc_ret) {
+		printk(KERN_ERR ": alloc character region fail\n");
+		return -EIO;
+	}
+	ralink_nvram_major = major = MAJOR(dev);
+	cdev_init(&nvram_cdev, &ralink_nvram_fops);
+	nvram_cdev.owner = THIS_MODULE;
+	nvram_cdev.ops = &ralink_nvram_fops;
+	cdev_err = cdev_add(&nvram_cdev, MKDEV(ralink_nvram_major, 0), 1);
+	if (cdev_err) {
+		printk(KERN_ERR ": add character device fail\n");
+		unregister_chrdev_region(dev, 1);
+		return -EIO;
+	}
+	nvram_class = class_create(THIS_MODULE, RALINK_NVRAM_DEVNAME);
+	if (IS_ERR(nvram_class)) {
+		printk(KERN_ERR ": create class fail\n");
+		unregister_chrdev_region(dev, 1);
+		cdev_del(&nvram_cdev);
+		return -EIO;
+	}
+	nvram_dev = MKDEV(ralink_nvram_major, 0);
+	class_dev = device_create(nvram_class, NULL, nvram_dev, NULL, RALINK_NVRAM_DEVNAME);
+	printk(KERN_ERR "nvram driver (major %d) installed\n", major);
+#else
 #ifdef  CONFIG_DEVFS_FS
 	if (devfs_register_chrdev(ralink_nvram_major, RALINK_NVRAM_DEVNAME,
 				&ralink_nvram_fops)) {
@@ -307,26 +367,7 @@ int __init ra_nvram_init(void)
 		printk(KERN_DEBUG "ralink_nvram: got dynamic major %d\n", r);
 	}
 #endif
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,36)
-	init_MUTEX(&nvram_sem);
-#else
-  sema_init(&nvram_sem,1);  
 #endif
-	down(&nvram_sem);
-#ifdef CONFIG_CONFIG_SHRINK
-	if(!hash_funcSet_reg(&ghashTbFuncSet))
-		return (-1);
-	memset(&ghashInfo,(-1),sizeof(hash_info_t));
-	ghashInfo.hashFbIdx =  hashFb_idx_ret(FB_2860_BLOCK_NAME);
-	if(ghashInfo.hashFbIdx == (-1))
-		return (-1);
-#endif
-
-	for (i = 0; i < FLASH_BLOCK_NUM+EXTEND_BLOCK_NUM; i++){
-		init_nvram_block(i);
-	}
-
-	up(&nvram_sem);
 
 	return 0;
 }
@@ -334,7 +375,7 @@ int __init ra_nvram_init(void)
 static int init_nvram_block(int index)
 {
 	unsigned long from;
-	int i, j, len;
+	int i, j, len , crcLen,envDataLen;
 	char *p, *q;
 
 	i = index;
@@ -347,18 +388,25 @@ static int init_nvram_block(int index)
 
 	//read crc from flash
 	from = fb[i].flash_offset;
-	len = sizeof(fb[i].env.crc);
+	crcLen = sizeof(fb[i].env.crc);
 #if defined CONFIG_EXTEND_NVRAM
 	if (i >= CONFIG2_NVRAM)
-		ra_mtd_read_nm(RALINK_NVRAM2_MTDNAME, from, len, (unsigned char *)&fb[i].env.crc);
+		ra_mtd_read_nm(RALINK_NVRAM2_MTDNAME, from, crcLen, (unsigned char *)&fb[i].env.crc);
 	else
 #endif
-	ra_mtd_read_nm(RALINK_NVRAM_MTDNAME, from, len, (unsigned char *)&fb[i].env.crc);
+	ra_mtd_read_nm(RALINK_NVRAM_MTDNAME, from, crcLen, (unsigned char *)&fb[i].env.crc);
 
 	//read data from flash
-	from = from + len;
-	len = fb[i].flash_max_len - len;
-	fb[i].env.data = (char *)kmalloc(len, GFP_KERNEL);
+	from = from + crcLen;
+	len = fb[i].flash_max_len - crcLen;
+#ifdef CONFIG_CONFIG_SHRINK
+	envDataLen = ENLARGED_DATE_SIZE(index,fb[i].flash_max_len,crcLen);
+#else
+	envDataLen = len;
+#endif
+
+	if(!fb[i].env.data)
+		fb[i].env.data = (char *)kmalloc(envDataLen, GFP_KERNEL);
 	if (!fb[i].env.data)
 		return -ENOMEM;
 
@@ -372,20 +420,18 @@ static int init_nvram_block(int index)
 	//check crc
 	if (nv_crc32(0, fb[i].env.data, len) != fb[i].env.crc) {
 		RANV_PRINT("Bad CRC %x, ignore values in flash.\n", (unsigned int)fb[i].env.crc);
-		memset(fb[index].env.data, 0, len);
+		memset(fb[index].env.data, 0, envDataLen);
 		//kfree(fb[i].env.data);
 		fb[i].valid = 1;
 		fb[i].dirty = 0;
 		return -1;
 	}
-	
 	//parse env to cache
 	p = fb[i].env.data;
 #ifdef CONFIG_CONFIG_SHRINK
-	if(ghashInfo.hashFbIdx == i){
-		ghashTbFuncSet.conf_init(&p,len);
-		printk("HASH TB INIT SUCUESS \n");
-		ghashInfo.initFlag = 1;
+	if(CONFIGFB_MATCH(i)){
+		ghashTbFuncSet.conf_init(&p,envDataLen);
+		RANV_PRINT("HASH TB INIT SUCUESS \n");
 	}
 #endif
 	for (j = 0; j < MAX_CACHE_ENTRY; j++) {
@@ -406,7 +452,7 @@ static int init_nvram_block(int index)
 		//printk("'%s'\n", p);
 
 		p = q + 1; //next entry
-		if (p - fb[i].env.data + 1 >= len) {
+		if (p - fb[i].env.data + 1 >= envDataLen) {
 			//end of block
 			break;
 		}
@@ -439,11 +485,19 @@ static void ra_nvram_exit(void)
 		kfree(fb[index].env.data);
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,20)
+	nvram_dev = MKDEV(ralink_nvram_major, 0);
+	device_destroy(nvram_class, nvram_dev);
+	class_destroy(nvram_class);
+	cdev_del(&nvram_cdev);
+	unregister_chrdev_region(nvram_dev, 1);
+#else
 #ifdef  CONFIG_DEVFS_FS
 	devfs_unregister_chrdev(ralink_nvram_major, RALINK_NVRAM_DEVNAME);
 	devfs_unregister(devfs_handle);
 #else
 	unregister_chrdev(ralink_nvram_major, RALINK_NVRAM_DEVNAME);
+#endif
 #endif
 
 }
@@ -474,32 +528,6 @@ static int ra_nvram_close(int index)
 	up(&nvram_sem);
 	return 0;
 }
-#ifdef CONFIG_CONFIG_SHRINK
-static int hashFb_idx_ret(char *name){
-	int i = 0;
-
-	if(!name)
-		return (-1);
-	for (i = 0; i < FLASH_BLOCK_NUM; i++) {
-		if (!fb[i].name)
-			return (-1);
-		if (!strcmp(name, fb[i].name))
-			return i;
-	}
-	return (-1);
-}
-
-static int configFb_match(int index){
-
-	if(ghashInfo.initFlag == (-1))
-		return (0);
-	if((index >= FLASH_BLOCK_NUM) || (index <0))
-		return (0);
-	if(index == ghashInfo.hashFbIdx)
-		return (1);
-	return (0);
-}
-#endif
 /*
  * return idx (0 ~ iMAX_CACHE_ENTRY)
  * return -1 if no such value or empty cache
@@ -523,26 +551,40 @@ static int cache_idx(int index, char *name)
 int nvram_clear(int index)
 {
 	unsigned long to;
-	int len;
+#ifdef CONFIG_CONFIG_SHRINK
+	int ret = 1;
+#endif
+	int len,envDataLen;
 
 	RANV_PRINT("--> nvram_clear %d\n", index);
 	RANV_CHECK_INDEX(-1);
-
-	ra_nvram_close(index);
 
 	down(&nvram_sem);
 
 	//construct all 1s env block
 	len = fb[index].flash_max_len - sizeof(fb[index].env.crc);
+#ifdef CONFIG_CONFIG_SHRINK
+	envDataLen = ENLARGED_DATE_SIZE(index,fb[index].flash_max_len,sizeof(fb[index].env.crc));
+#else
+	envDataLen = len;
+#endif
+
 	if (!fb[index].env.data) {
-		fb[index].env.data = (char *)kmalloc(len, GFP_KERNEL);
-		if (!fb[index].env.data)
+		fb[index].env.data = (char *)kmalloc(envDataLen, GFP_KERNEL);
+		if (!fb[index].env.data) {
+			up(&nvram_sem);
 			return -ENOMEM;
+		}
 	}
-	memset(fb[index].env.data, 0xFF, len);
+#ifdef CONFIG_CONFIG_SHRINK
+	if(CONFIGFB_MATCH(index))
+		ret = ghashTbFuncSet.conf_clear();
+#endif
+	memset(fb[index].env.data, 0xFF, envDataLen);
 
 	//calculate crc
 	fb[index].env.crc = (unsigned long)nv_crc32(0, (unsigned char *)fb[index].env.data, len);
+	up(&nvram_sem);
 
         //write crc to flash
 	to = fb[index].flash_offset;
@@ -567,7 +609,10 @@ int nvram_clear(int index)
 	RANV_PRINT("clear flash from 0x%x for 0x%x bytes\n", (unsigned int)to, len);
 	fb[index].dirty = 0;
 
-	up(&nvram_sem);
+#ifdef CONFIG_CONFIG_SHRINK
+	if(ret)
+#endif
+	ra_nvram_close(index);
 
 	return 0;
 }
@@ -575,7 +620,7 @@ int nvram_clear(int index)
 int nvram_commit(int index)
 {
 	unsigned long to;
-	int i, len;
+	int i, len,envDataLen;
 	char *p;
 
 	RANV_PRINT("--> nvram_commit %d\n", index);
@@ -595,16 +640,24 @@ int nvram_commit(int index)
 
 	//construct env block
 	len = fb[index].flash_max_len - sizeof(fb[index].env.crc);
+#ifdef CONFIG_CONFIG_SHRINK
+	envDataLen = ENLARGED_DATE_SIZE(index,fb[index].flash_max_len,sizeof(fb[index].env.crc));
+#else
+	envDataLen = len;
+#endif
+
 	if (!fb[index].env.data) {
-		fb[index].env.data = (char *)kmalloc(len, GFP_KERNEL);
-		if (!fb[index].env.data)
+		fb[index].env.data = (char *)kmalloc(envDataLen, GFP_KERNEL);
+		if (!fb[index].env.data) {
+			up(&nvram_sem);
 			return -ENOMEM;
+		}
 	}
-	memset(fb[index].env.data, 0, len);
+	memset(fb[index].env.data, 0, envDataLen);
 	p = fb[index].env.data;
 #ifdef CONFIG_CONFIG_SHRINK
-	if(configFb_match(index)){
-		ghashTbFuncSet.conf_getall(&p,len,fb[index].flash_max_len,HASH_2_FLASH);
+	if(CONFIGFB_MATCH(index)){
+		ghashTbFuncSet.conf_getall(&p,envDataLen,HASH_2_FLASH);
 	}
 #endif
 	for (i = 0; i < MAX_CACHE_ENTRY; i++) {
@@ -613,7 +666,7 @@ int nvram_commit(int index)
 		if (!fb[index].cache[i].name || !fb[index].cache[i].value)
 			break;
 		l = strlen(fb[index].cache[i].name) + strlen(fb[index].cache[i].value) + 2;
-		if (p - fb[index].env.data + 2 >= fb[index].flash_max_len) {
+		if (p - fb[index].env.data + 2 >= envDataLen) {
 			RANV_ERROR("ENV_BLK_SIZE 0x%x is not enough!", ENV_BLK_SIZE);
 			up(&nvram_sem);
 			return -1;
@@ -626,6 +679,7 @@ int nvram_commit(int index)
 
 	//calculate crc
 	fb[index].env.crc = (unsigned long)nv_crc32(0, (unsigned char *)fb[index].env.data, len);
+	up(&nvram_sem);
 
 	//write crc to flash
 	to = fb[index].flash_offset;
@@ -649,7 +703,6 @@ int nvram_commit(int index)
 
 	fb[index].dirty = 0;
 
-	up(&nvram_sem);
 
 	return 0;
 }
@@ -670,7 +723,7 @@ int nvram_set(int index, char *name, char *value)
 	counter++;
 
 #ifdef CONFIG_CONFIG_SHRINK
-	if(configFb_match(index)){
+	if(CONFIGFB_MATCH(index)){
 		ret = ghashTbFuncSet.conf_set(name, value);
 	}
 	if(!ret){
@@ -714,6 +767,7 @@ char const *nvram_get(int index, char *name)
 	int idx;
 	static char const *ret;
 
+	ret = NULL;
 	RANV_PRINT("--> nvram_get %d %s\n", index, name);
 
 	RANV_CHECK_INDEX(NULL);
@@ -723,7 +777,7 @@ char const *nvram_get(int index, char *name)
 
 	counter++;
 #ifdef CONFIG_CONFIG_SHRINK
-	if(configFb_match(index)){
+	if(CONFIGFB_MATCH(index)){
 		if((ret = ghashTbFuncSet.conf_get(name))!= NULL){
 			up(&nvram_sem);
 			return ret;
@@ -764,18 +818,24 @@ int nvram_getall(int index, char *buf)
 	down(&nvram_sem);
 	RANV_CHECK_VALID();
 
+
+#ifdef CONFIG_CONFIG_SHRINK
+	len = ENLARGED_DATE_SIZE(index,fb[index].flash_max_len,sizeof(fb[index].env.crc));
+#else
 	len = fb[index].flash_max_len - sizeof(fb[index].env.crc);
+#endif
 	if (!fb[index].env.data) {
 		fb[index].env.data = (char *)kmalloc(len, GFP_KERNEL);
-		if (!fb[index].env.data)
+		if (!fb[index].env.data) {
+			up(&nvram_sem);
 			return -ENOMEM;
+		}
 	}
 	memset(fb[index].env.data, 0, len);
 	p = buf;
 #ifdef CONFIG_CONFIG_SHRINK
-
-	if(configFb_match(index)){
-		ghashTbFuncSet.conf_getall(&p,len,fb[index].flash_max_len,HASH_2_MEM);
+	if(CONFIGFB_MATCH(index)){
+		ghashTbFuncSet.conf_getall(&p,len,HASH_2_MEM);
 	}
 #endif
 	for (i = 0; i < MAX_CACHE_ENTRY; i++) {
@@ -784,7 +844,7 @@ int nvram_getall(int index, char *buf)
 		if (!fb[index].cache[i].name || !fb[index].cache[i].value)
 			break;
 		l = strlen(fb[index].cache[i].name) + strlen(fb[index].cache[i].value) + 2;
-		if (p - fb[index].env.data + 2 >= fb[index].flash_max_len) {
+		if (p - fb[index].env.data + 2 >= len) {
 			RANV_ERROR("ENV_BLK_SIZE 0x%x is not enough!", ENV_BLK_SIZE);
 			up(&nvram_sem);
 			return -1;
@@ -800,7 +860,12 @@ int nvram_getall(int index, char *buf)
 	return 0;
 }
 
+#if defined (CONFIG_ARCH_MT7623)
+module_init(ra_nvram_init);
+MODULE_LICENSE("GPL");
+#else
 late_initcall(ra_nvram_init);
+#endif
 module_exit(ra_nvram_exit);
 EXPORT_SYMBOL(nvram_get);
 EXPORT_SYMBOL(nvram_set);

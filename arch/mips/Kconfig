@@ -94,6 +94,21 @@ config RALINK_MT7621
 	help
 	  Ralink evaluation board based on MT7621
 
+config RALINK_RT5350
+        bool "Ralink RT5350 board"
+	select DMA_NONCOHERENT
+	select IRQ_CPU
+	select SWAP_IO_SPACE
+	select SYS_HAS_CPU_MIPS32_R1
+        select SYS_HAS_CPU_MIPS32_R2
+	select SYS_SUPPORTS_LITTLE_ENDIAN
+	select BOOT_ELF32
+	select SYS_SUPPORTS_32BIT_KERNEL
+	select CSRC_R4K
+	select CEVT_R4K
+        help
+         Ralink evaluation board based on RT5350
+
 config RALINK_MT7628
         bool "Ralink MT7628 board"
 	select DMA_NONCOHERENT

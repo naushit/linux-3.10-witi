@@ -5,40 +5,57 @@
 #include <linux/init.h>
 #include <linux/version.h>
 #include <linux/module.h>
-#include <linux/config.h>
+#include <linux/autoconf.h>
 #include <linux/kernel.h>
 #include <linux/interrupt.h>
 #include <linux/ioctl.h>
 #include <asm/rt2880/rt_mmap.h>
 
+#include <linux/platform_device.h>
+
 #include "./codec_lib/codec_api.h"
 
 #define PCM_MOD_VERSION 			"1.0"
 
+#if defined (CONFIG_ARCH_MT7623) || defined (CONFIG_ARCH_MT7622)
+#if defined (CONFIG_ARCH_MT7623)
+#define CONFIG_RALINK_MT7628
+#endif
+
+#if defined (CONFIG_ARM64)
+extern void __iomem *pcmctrl_base;
+#define RALINK_INTCL_BASE 0xFFFFFFFFFB000200
+#else
+#define RALINK_PCM_BASE ETHDMASYS_PCM_BASE
+#define RALINK_INTCL_BASE 0xFB000200
+#endif
+#endif
+
 #if defined (CONFIG_RALINK_RT3352) || defined (CONFIG_RALINK_RT3883) ||\
 	defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_RT6855A) ||\
 	defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) ||\
-	defined (CONFIG_RALINK_MT7628)
+	defined (CONFIG_RALINK_MT7628) || defined(CONFIG_ARCH_MT7623) || \
+	defined(CONFIG_ARCH_MT7622)
 #define CONFIG_RALINK_PCMFRACDIV	1
 #endif
 
-#if defined (CONFIG_RALINK_MT7621)
+#if defined (CONFIG_RALINK_MT7621) || defined(CONFIG_ARCH_MT7623) || defined(CONFIG_ARCH_MT7622)
 #define REF_CLK_40MHZ	1
 //#define REF_CLK_20MHZ	1
 
 #if (CONFIG_RALINK_PCMSLOTMODE==0)
-#define CONFIG_RALINK_PCMINTDIV     574
-#define CONFIG_RALINK_PCMCOMPDIV    56
+#define CONFIG_RALINK_PCMINTDIV     71//574
+#define CONFIG_RALINK_PCMCOMPDIV    239//56
 #endif
 
 #if (CONFIG_RALINK_PCMSLOTMODE==1)
-#define CONFIG_RALINK_PCMINTDIV     287
-#define CONFIG_RALINK_PCMCOMPDIV    28
+#define CONFIG_RALINK_PCMINTDIV     35//287
+#define CONFIG_RALINK_PCMCOMPDIV    247//28
 #endif
 
 #if (CONFIG_RALINK_PCMSLOTMODE==2)
-#define CONFIG_RALINK_PCMINTDIV     143
-#define CONFIG_RALINK_PCMCOMPDIV    142
+#define CONFIG_RALINK_PCMINTDIV     17//143
+#define CONFIG_RALINK_PCMCOMPDIV    251//142
 #endif
 
 #if (CONFIG_RALINK_PCMSLOTMODE==3)
@@ -47,8 +64,8 @@
 #endif
 
 #if (CONFIG_RALINK_PCMSLOTMODE==4)
-#define CONFIG_RALINK_PCMINTDIV     35
-#define CONFIG_RALINK_PCMCOMPDIV    227
+#define CONFIG_RALINK_PCMINTDIV     4//35
+#define CONFIG_RALINK_PCMCOMPDIV    126//227
 #endif
 
 #if (CONFIG_RALINK_PCMSLOTMODE==5)
@@ -81,8 +98,16 @@
 #define Virtual2NonCache(x)             (((int)x) | 0x20000000)
 #define Physical2NonCache(x)            (((int)x) | 0xa0000000)
 
+#if defined (CONFIG_64BIT)
+#if defined (CONFIG_OF)
+#define RALINK_PCM_BASE				((u64)(pcmctrl_base))
+#define pcm_outw(address, value)      ((*(volatile unsigned int *)(address)) = (value))
+#define pcm_inw(address)            (*(volatile unsigned int *)((address)))
+#endif
+#else
 #define pcm_outw(address, value)	*((volatile uint32_t *)(address)) = cpu_to_le32(value)
 #define pcm_inw(address)			le32_to_cpu(*(volatile u32 *)(address))
+#endif
 
 #define PCM_DEBUG
 #ifdef PCM_DEBUG
@@ -119,8 +144,13 @@
 								(RALINK_PCM_BASE+0x0110+((i-2)<<2)))
 #define PCM_CH_CFG(i)			(((i==0)||(i==1))? (RALINK_PCM_BASE+0x0020+((i)<<2)):\
 								(RALINK_PCM_BASE+0x0120+((i-2)<<2)))
+								
+#if defined (CONFIG_64BIT)
+#define PCM_CH_FIFO(i)			(0x1b002000+0x0080+((i)<<2))
+#define PCM_CH_FIFO_VIRT(i)			(RALINK_PCM_BASE+0x0080+((i)<<2))
+#else								
 #define PCM_CH_FIFO(i)			(RALINK_PCM_BASE+0x0080+((i)<<2))
-
+#endif
 /* PCMCFG bit field */
 #define PCM_EXT_CLK_EN			31
 #define PCM_CLKOUT				30
@@ -134,7 +164,8 @@
 #define PCM_EN				31
 #define DMA_EN				30
 #if defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) || \
-	defined (CONFIG_RALINK_MT7628)
+	defined (CONFIG_RALINK_MT7628) || defined (CONFIG_ARCH_MT7623) ||\
+	defined (CONFIG_ARCH_MT7622)
 #define PCM_LBK             29
 #define PCM_EXT_LBK         28
 #endif
@@ -144,7 +175,8 @@
 #define CH0_TX_EN			8
 #define CH1_RX_EN			1
 #if defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) || \
-	defined (CONFIG_RALINK_MT7628)
+	defined (CONFIG_RALINK_MT7628) || defined (CONFIG_ARCH_MT7623) || \
+	defined (CONFIG_ARCH_MT7622)
 #define CH_EN               0
 #else
 #define CH0_RX_EN			0
@@ -152,14 +184,16 @@
 
 /* CH0/1_CFG bit field */
 #if !(defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) || \
-		defined (CONFIG_RALINK_MT7628))
+		defined (CONFIG_RALINK_MT7628) || defined (CONFIG_ARCH_MT7623) || \
+		defined (CONFIG_ARCH_MT7622))
 #define PCM_LBK					31
 #define PCM_EXT_LBK				30
 #endif
 #if defined (CONFIG_RALINK_RT3883) || defined (CONFIG_RALINK_RT3352) ||\
 	defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_RT6855A) ||\
 	defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) ||\
-	defined (CONFIG_RALINK_MT7628)
+	defined (CONFIG_RALINK_MT7628) || defined (CONFIG_ARCH_MT7623) ||\
+	defined (CONFIG_ARCH_MT7622)
 #define PCM_CMP_MODE			27
 #else
 #define PCM_CMP_MODE			28
@@ -223,7 +257,7 @@
 #define PCM_INLOOP
 //#define PCM_EXLOOP
 #define PCM_STATISTIC
-
+//#define PCM_FIFO_MODE
 #define PCM_LINEAR
 //#define PCM_ULAW
 //#define PCM_ALAW
@@ -276,7 +310,8 @@
 #if defined(CONFIG_RALINK_RT3883) || defined(CONFIG_RALINK_RT3352) ||\
 	defined (CONFIG_RALINK_RT5350) || defined (CONFIG_RALINK_RT6855A) ||\
 	defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) ||\
-	defined (CONFIG_RALINK_MT7628)
+	defined (CONFIG_RALINK_MT7628) || defined (CONFIG_ARCH_MT7623) ||\
+	defined (CONFIG_ARCH_MT7622)
 
 #ifdef PCM_LINEAR
 #define CONFIG_PCM_CMP_MODE			0
@@ -387,6 +422,8 @@ typedef struct pcm_config_t
 	u32 ext_lbk[MAX_PCM_CH];
 	u32 ts_start[MAX_PCM_CH];
 	u32 cmp_mode[MAX_PCM_CH];
+
+	void* pdev;
 #ifdef __KERNEL__	
 	spinlock_t lock;
 	spinlock_t txlock;
@@ -443,7 +480,7 @@ void pcm_tx_task(unsigned long pData);
 #define PCM_SAMPLE_SIZE			2
 #endif
 
-#define PCM_8KHZ_SAMPLES		80
+#define PCM_8KHZ_SAMPLES		(1*80)
 
 #define MAX_PCM_FIFO			12
 #define PCM_FIFO_SAMPLES		(PCM_8KHZ_SAMPLES)
@@ -459,9 +496,9 @@ void pcm_tx_task(unsigned long pData);
 
 /* driver status definition */
 #define PCM_OK					0
-#define PCM_OUTOFMEM				0x01
-#define PCM_GDMAFAILED				0x02
-#define PCM_REQUEST_IRQ_FAILED			0x04
+#define PCM_OUTOFMEM				-1
+#define PCM_GDMAFAILED				-2
+#define PCM_REQUEST_IRQ_FAILED		-3
 
 /* driver i/o control command */
 #define PCM_SET_RECORD			0

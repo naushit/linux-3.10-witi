@@ -883,7 +883,7 @@ static bool mtk_nand_check_bch_error(struct mtd_info *mtd, u8 * pDataBuf, u32 u4
 #if defined(SKIP_BAD_BLOCK)
 		if (!is_skip_bad_block(mtd, u4PageAddr))
 #endif
-            mtd->ecc_stats.corrected++;
+            		mtd->ecc_stats.corrected++;
         } else
         {
             printk(KERN_INFO "Less than 2 bit error, ignore\n");
@@ -918,13 +918,13 @@ static bool mtk_nand_check_bch_error(struct mtd_info *mtd, u8 * pDataBuf, u32 u4
 #if defined(SKIP_BAD_BLOCK)
 		    if (!is_skip_bad_block(mtd, u4PageAddr))
 #endif
-                    mtd->ecc_stats.corrected++;
+                        mtd->ecc_stats.corrected++;
                 } else
                 {
 #if defined(SKIP_BAD_BLOCK)
 		    if (!is_skip_bad_block(mtd, u4PageAddr))
 #endif
-                    mtd->ecc_stats.corrected++;
+                    	mtd->ecc_stats.corrected++;
                     //printk(KERN_ERR"UnCorrectable ErrLoc=%d\n", au4ErrBitLoc[i]);
                 }
                 u4ErrBitLoc2nd = (au4ErrBitLoc[i] >> 16) & 0x1FFF;
@@ -938,11 +938,11 @@ static bool mtk_nand_check_bch_error(struct mtd_info *mtd, u8 * pDataBuf, u32 u4
 #if defined(SKIP_BAD_BLOCK)
 			if (!is_skip_bad_block(mtd, u4PageAddr))
 #endif
-                        mtd->ecc_stats.corrected++;
+                            mtd->ecc_stats.corrected++;
                     } else
                     {
 #if defined(SKIP_BAD_BLOCK)
-		    	if (!is_skip_bad_block(mtd, u4PageAddr))
+		    if (!is_skip_bad_block(mtd, u4PageAddr))
 #endif
                         mtd->ecc_stats.corrected++;
                         //printk(KERN_ERR"UnCorrectable High ErrLoc=%d\n", au4ErrBitLoc[i]);
@@ -2351,7 +2351,10 @@ static int block_remap(struct mtd_info *mtd, int block)
 
 int check_block_remap(struct mtd_info *mtd, int block)
 {
-	if (shift_on_bbt)
+	struct nand_chip *chip = mtd->priv;
+	int page_per_block_bit = chip->phys_erase_shift - chip->page_shift;
+
+	if ((shift_on_bbt) && (is_skip_bad_block(mtd, (block << page_per_block_bit))))
 		return  block_remap(mtd, block);
 	else
 		return block;
