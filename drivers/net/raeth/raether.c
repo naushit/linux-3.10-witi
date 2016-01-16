@@ -3108,13 +3108,16 @@ void RAETH_Init_PSEUDO(pEND_DEVICE pAd, struct net_device *net_dev)
 	i = ra_mtd_read_nm("Factory", GMAC2_OFFSET, 6, addr.sa_data);
 #endif
 
-	//If reading mtd failed or mac0 is empty, generate a mac address
+	//If reading mtd failed or mac2 is empty, generate a mac address
+	printk("GMAC2 MTD mac address: %2X:%2X:%2X:%2X:%2X:%2X\n", addr.sa_data[0], addr.sa_data[1], addr.sa_data[2], addr.sa_data[3], addr.sa_data[4], addr.sa_data[5]);
+
 	if (i < 0 || ((memcmp(addr.sa_data, zero1, 6) == 0) || (addr.sa_data[0] & 0x1)) || 
 	    (memcmp(addr.sa_data, zero2, 6) == 0)) {
 		unsigned char mac_addr01234[5] = {0x00, 0x0C, 0x43, 0x28, 0x80};
-		net_srandom(jiffies);
+		prandom_seed(jiffies);
 		memcpy(addr.sa_data, mac_addr01234, 5);
-		addr.sa_data[5] = net_random()&0xFF;
+		addr.sa_data[5] = prandom_u32()&0xFF;
+		printk("GMAC2 fixed mac address: %2X:%2X:%2X:%2X:%2X:%2X\n", addr.sa_data[0], addr.sa_data[1], addr.sa_data[2], addr.sa_data[3], addr.sa_data[4], addr.sa_data[5]);
 	}
 
 	ei_set_mac2_addr(dev, &addr);
@@ -3220,19 +3223,27 @@ int ei_open(struct net_device *dev)
 #define RT2860_NVRAM	0
 #endif
 #endif // CONFIG_RAETH_LRO //
+
 	//Get mac0 address from flash
 #ifdef RA_MTD_RW_BY_NUM
 	i = ra_mtd_read(2, GMAC0_OFFSET, 6, addr.sa_data);
 #else
 	i = ra_mtd_read_nm("Factory", GMAC0_OFFSET, 6, addr.sa_data);
 #endif
-	printk("%2X:%2X:%2X:%2X:%2X:%2X\n", addr.sa_data[0], addr.sa_data[1], addr.sa_data[2], addr.sa_data[3], addr.sa_data[4], addr.sa_data[5]);
-	//If reading mtd failed or mac0 is empty, generate a mac address
-	if (i >= 0 && (memcmp(addr.sa_data, zero1, 6) != 0) && !(addr.sa_data[0] & 0x1) && 
-	    (memcmp(addr.sa_data, zero2, 6) != 0)) {
-		ei_set_mac_addr(dev, &addr);
-		ether_setup(dev);
+
+	/* If reading mtd failed or mac0 is empty, generate a mac address */
+	printk("GMAC0 MTD mac address: %2X:%2X:%2X:%2X:%2X:%2X\n", addr.sa_data[0], addr.sa_data[1], addr.sa_data[2], addr.sa_data[3], addr.sa_data[4], addr.sa_data[5]);
+
+	if (i < 0 || ((memcmp(addr.sa_data, zero1, 6) == 0) || (addr.sa_data[0] & 0x1)) ||
+	    (memcmp(addr.sa_data, zero2, 6) == 0)) {
+		unsigned char mac_addr01234[5] = {0x00, 0x0C, 0x43, 0x28, 0x80};
+		prandom_seed(jiffies);
+		memcpy(addr.sa_data, mac_addr01234, 5);
+		addr.sa_data[5] = prandom_u32()&0xFF;
+		printk("GMAC0 fixed mac address: %2X:%2X:%2X:%2X:%2X:%2X\n", addr.sa_data[0], addr.sa_data[1], addr.sa_data[2], addr.sa_data[3], addr.sa_data[4], addr.sa_data[5]);
 	}
+	ei_set_mac_addr(dev, &addr);
+	ether_setup(dev);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,0)
 	if (!try_module_get(THIS_MODULE))
@@ -3246,7 +3257,7 @@ int ei_open(struct net_device *dev)
 
 	printk("Raeth %s (",RAETH_VERSION);
 #if defined (CONFIG_RAETH_NAPI)
-	printk("NAPI\n");
+	printk("NAPI");
 #elif defined (CONFIG_RA_NETWORK_TASKLET_BH)
 	printk("Tasklet");
 #elif defined (CONFIG_RA_NETWORK_WORKQUEUE_BH)
