@@ -1,13 +1,13 @@
 config MTK_MMC
-	tristate "MediaTek SD/MMC host controller"
-	depends on MMC && (RALINK_MT7620 || RALINK_MT7621 || RALINK_MT7628) && !(MTD_NAND_RALINK || MTD_NAND_MTK)
+	tristate "MTK SD/MMC"
+	depends on !MTD_NAND_RALINK
 
 config MTK_AEE_KDUMP
 	bool "MTK AEE KDUMP"
 	depends on MTK_MMC
 
 config MTK_MMC_CD_POLL
-	bool "Card detect with Polling"
+	bool "Card Detect with Polling"
 	depends on MTK_MMC
 
 config MTK_MMC_EMMC_8BIT

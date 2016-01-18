@@ -43,10 +43,16 @@
 #define DRIVER_AUTHOR "Sarah Sharp"
 #define DRIVER_DESC "'eXtensible' Host Controller (xHC) Driver"
 
+#define	PORT_WAKE_BITS	(PORT_WKOC_E | PORT_WKDISC_E | PORT_WKCONN_E)
 /* Some 0.95 hardware can't handle the chain bit on a Link TRB being cleared */
 static int link_quirk;
 module_param(link_quirk, int, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(link_quirk, "Don't clear the chain bit on a link TRB");
+
+int usb3_disable = 0;
+module_param(usb3_disable, int, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(usb3_disable, "Disable USB3 interface");
+
 
 #if defined (CONFIG_USB_MT7621_XHCI_PLATFORM)
 long xhci_mtk_test_unlock_ioctl(struct file *file, unsigned int cmd, unsigned long arg);

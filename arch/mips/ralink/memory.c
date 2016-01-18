@@ -46,7 +46,7 @@
 #include <linux/sizes.h>
 
 #include <asm/mach-ralink/prom.h>
-#undef DEBUG
+#define DEBUG
 
 enum surfboard_memtypes {
 	surfboard_dontuse,
@@ -92,14 +92,14 @@ struct prom_pmemblock * __init prom_getmdesc(void)
 	unsigned int ramsize, rambase;
 
 	env_str = prom_getenv("ramsize");
+	if (!env_str) { env_str = prom_getenv("memsize"); }
 	if (!env_str) {
 		ramsize = CONFIG_RALINK_RAM_SIZE * 1024 * 1024;
-		prom_printf("ramsize = %d MBytes\n", CONFIG_RALINK_RAM_SIZE );
+		prom_printf("[noenv] ramsize = %d MBytes\n", CONFIG_RALINK_RAM_SIZE );
 	} else {
-#ifdef DEBUG
-		prom_printf("ramsize = %s\n", env_str);
-#endif
+		prom_printf("[env] ramsize = %s\n", env_str);
 		ramsize = memparse(env_str, NULL);
+		if ( ramsize < SZ_1M ) { ramsize *= SZ_1M; }
 	}
 
 	env_str = prom_getenv("rambase");
@@ -126,9 +126,11 @@ struct prom_pmemblock * __init prom_getmdesc(void)
 #if defined(CONFIG_MT7621_ASIC)
 	if (ramsize > 448 * SZ_1M){
 		mdesc[0].size = 448 * SZ_1M;
+#if defined(CONFIG_HIGHMEM)
 		mdesc[1].type = surfboard_ram;
 		mdesc[1].base = 0x20000000;
 		mdesc[1].size = 64 * SZ_1M;
+#endif
 	}
 #endif
 

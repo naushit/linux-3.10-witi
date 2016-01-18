@@ -33,11 +33,13 @@
  * applicable license agreements with MediaTek Inc.
  */
 
-#ifndef _MT6575_SD_H
-#define _MT6575_SD_H
+#ifndef MT6575_SD_H
+#define MT6575_SD_H
 
 #include <linux/bitops.h>
 #include <linux/mmc/host.h>
+
+// #include <mach/mt6575_reg_base.h> /* --- by chhung */
 
 /*--------------------------------------------------------------------------*/
 /* Common Macro                                                             */
@@ -133,7 +135,6 @@ enum {
 #define OFFSET_MSDC_DMA_CFG     (0x9c)
 #define OFFSET_MSDC_DBG_SEL     (0xa0)
 #define OFFSET_MSDC_DBG_OUT     (0xa4)
-#define OFFSET_MSDC_DMA_LENGTH  (0xa8)
 #define OFFSET_MSDC_PATCH_BIT   (0xb0)
 #define OFFSET_MSDC_PATCH_BIT1  (0xb4)
 #define OFFSET_MSDC_PAD_CTL0    (0xe0)
@@ -191,7 +192,6 @@ enum {
 #define MSDC_DMA_CA             REG_ADDR(MSDC_DMA_CA)
 #define MSDC_DMA_CTRL           REG_ADDR(MSDC_DMA_CTRL)
 #define MSDC_DMA_CFG            REG_ADDR(MSDC_DMA_CFG)
-#define MSDC_DMA_LENGTH         REG_ADDR(MSDC_DMA_LENGTH)
 
 /* pad ctrl register */
 #define MSDC_PAD_CTL0           REG_ADDR(MSDC_PAD_CTL0)
@@ -237,7 +237,6 @@ enum {
 #define MSDC_IOCON_DDLSEL       (0x1  << 3)     /* RW */
 #define MSDC_IOCON_DDR50CKD     (0x1  << 4)     /* RW */
 #define MSDC_IOCON_DSPLSEL      (0x1  << 5)     /* RW */
-#define MSDC_IOCON_WDSPL        (0x1  << 8)     /* RW */
 #define MSDC_IOCON_D0SPL        (0x1  << 16)    /* RW */
 #define MSDC_IOCON_D1SPL        (0x1  << 17)    /* RW */
 #define MSDC_IOCON_D2SPL        (0x1  << 18)    /* RW */
@@ -494,7 +493,7 @@ typedef struct {
     u32 ckstb:1;
     u32 ckdiv:8;
     u32 ckmod:2;
-    u32 pad:14;
+    u32 pad:14;		
 } msdc_cfg_reg;
 typedef struct {
     u32 sdr104cksel:1;
@@ -598,7 +597,7 @@ typedef struct {
     u32 dtype:2;
     u32 rw:1;
     u32 stop:1;
-    u32 goirq:1;
+    u32 goirq:1;    
     u32 blklen:12;
     u32 atocmd:2;
     u32 volswth:1;
@@ -617,16 +616,16 @@ typedef struct {
     u32 val;
 } sdc_resp0_reg;
 typedef struct {
-    u32 val;
+    u32 val;	
 } sdc_resp1_reg;
 typedef struct {
-    u32 val;
+    u32 val;	
 } sdc_resp2_reg;
 typedef struct {
-    u32 val;
+    u32 val;	
 } sdc_resp3_reg;
 typedef struct {
-    u32 num;
+    u32 num;	
 } sdc_blknum_reg;
 typedef struct {
     u32 sts;
@@ -718,7 +717,7 @@ typedef struct {
     u32 rsv1:1;
     u32 clksr:1;
     u32 rsv2:7;
-    u32 clkpd:1;
+    u32 clkpd:1;    
     u32 clkpu:1;
     u32 clksmt:1;
     u32 clkies:1;
@@ -727,12 +726,12 @@ typedef struct {
 } msdc_pad_ctl0_reg;
 typedef struct {
     u32 cmddrvn:3;
-    u32 rsv0:1;
+    u32 rsv0:1;    
     u32 cmddrvp:3;
     u32 rsv1:1;
     u32 cmdsr:1;
     u32 rsv2:7;
-    u32 cmdpd:1;
+    u32 cmdpd:1;    
     u32 cmdpu:1;
     u32 cmdsmt:1;
     u32 cmdies:1;
@@ -767,7 +766,7 @@ typedef struct {
     u32 dat2:5;
     u32 rsv2:3;
     u32 dat3:5;
-    u32 rsv3:3;
+    u32 rsv3:3;    
 } msdc_dat_rddly0;
 typedef struct {
     u32 dat4:5;
@@ -844,7 +843,7 @@ struct msdc_regs {
     msdc_dat_rddly0     dat_rddly0;    /* base+0xf0h */
     msdc_dat_rddly1     dat_rddly1;    /* base+0xf4h */
     msdc_hw_dbg_reg     hw_dbg;        /* base+0xf8h */
-    u32                 rsv7[1];
+    u32                 rsv7[1];       
     msdc_version_reg    version;       /* base+0x100h */
     msdc_eco_ver_reg    eco_ver;       /* base+0x104h */
 };
@@ -897,8 +896,9 @@ struct msdc_host
     int                         cmd_rsp_done;
     int                         cmd_r1b_done;
 
-    int                         error;
+    int                         error; 
     spinlock_t                  lock;           /* mutex */
+    struct semaphore            sem; 
 
     u32                         blksz;          /* host block size */
     u32                         base;           /* host base address */    
@@ -920,7 +920,12 @@ struct msdc_host
 
     int                         irq;            /* host interrupt */
 
-    struct delayed_work         card_delaywork;
+    struct tasklet_struct       card_tasklet;
+#if 0
+    struct work_struct  	card_workqueue;
+#else
+    struct delayed_work  	card_delaywork;
+#endif
 
     struct completion           cmd_done;
     struct completion           xfer_done;
@@ -969,7 +974,6 @@ static inline unsigned int uffs(unsigned int x)
     }
     return r;
 }
-
 #define sdr_read8(reg)           __raw_readb(reg)
 #define sdr_read16(reg)          __raw_readw(reg)
 #define sdr_read32(reg)          __raw_readl(reg)
@@ -981,16 +985,15 @@ static inline unsigned int uffs(unsigned int x)
 #define sdr_clr_bits(reg,bs)     ((*(volatile u32*)(reg)) &= ~((u32)(bs)))
 
 #define sdr_set_field(reg,field,val) \
-    do { \
-        volatile unsigned int tv = sdr_read32(reg); \
+    do {	\
+        volatile unsigned int tv = sdr_read32(reg);	\
         tv &= ~(field); \
         tv |= ((val) << (uffs((unsigned int)field) - 1)); \
         sdr_write32(reg,tv); \
     } while(0)
-
 #define sdr_get_field(reg,field,val) \
-    do { \
-        volatile unsigned int tv = sdr_read32(reg); \
+    do {	\
+        volatile unsigned int tv = sdr_read32(reg);	\
         val = ((tv & (field)) >> (uffs((unsigned int)field) - 1)); \
     } while(0)
 
