@@ -3836,7 +3836,7 @@ void setup_fpga_gsw(void)
 	       mii_mgr_write(i, 0x0, regValue);	
 	}
         mii_mgr_write(31, 0x7000, 0x3); //reset switch
-        udelay(10);
+        udelay(100);
 	sysRegWrite(RALINK_ETH_SW_BASE+0x100, 0x2105e337);//(GE1, Force 100M/FD, FC ON)
 	mii_mgr_write(31, 0x3600, 0x5e337);
 

@@ -94,6 +94,8 @@ menu "DOS/FAT/NT Filesystems"
 
 source "fs/fat/Kconfig"
 source "fs/ntfs/Kconfig"
+source "fs/ufsd/Kconfig"
+
 
 endmenu
 endif # BLOCK

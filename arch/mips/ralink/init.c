@@ -580,7 +580,7 @@ void prom_init_sysclk(void)
 #else
 	surfboard_sysclk = mips_cpu_feq/3;
 #endif
-	printk("\n The CPU feqenuce set to %u MHz\n",mips_cpu_feq / 1000 / 1000);
+	printk("\n The CPU frequence is set to %u MHz\n",mips_cpu_feq / 1000 / 1000);
 
 
 #ifdef CONFIG_RALINK_CPUSLEEP

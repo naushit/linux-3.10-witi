@@ -130,9 +130,9 @@ typedef struct usb_ctrlrequest devctrlrequest;
 
 #define AP_PROFILE_PATH_RBUS		"/etc/Wireless/RT2860/RT2860AP.dat"
 
-#define AP_PROFILE_PATH		"/etc/wireless/mt7612e/mt7612e.dat"
+#define AP_PROFILE_PATH		"/etc/wireless/mt7602e/mt7602e.dat"
 
-#define SINGLE_SKU_TABLE_FILE_NAME	"/etc/wireless/mt7612e/SingleSKU.dat"
+#define SINGLE_SKU_TABLE_FILE_NAME	"/etc/wireless/mt7602e/SingleSKU.dat"
 
 #define AP_DRIVER_VERSION		"3.0.4.0.P1"
 #endif /* RTMP_MAC_PCI */
@@ -143,10 +143,10 @@ typedef struct usb_ctrlrequest devctrlrequest;
 #ifdef CONFIG_STA_SUPPORT
 
 #ifdef RTMP_MAC_PCI
- #define STA_PROFILE_PATH_RBUS		"/etc/wireless/mt7612e/RT2860STA.dat"
- #define STA_PROFILE_PATH		"/etc/wireless/mt7612e/RT2860STA.dat"
- #define SINGLE_SKU_TABLE_FILE_NAME	"/etc/wireless/mt7612e/SingleSKU.dat"
- #define CARD_INFO_PATH			"/etc/wireless/mt7612e/RT2860STACard.dat"
+ #define STA_PROFILE_PATH_RBUS		"/etc/wireless/mt7602e/RT2860STA.dat"
+ #define STA_PROFILE_PATH		"/etc/wireless/mt7602e/RT2860STA.dat"
+ #define SINGLE_SKU_TABLE_FILE_NAME	"/etc/wireless/mt7602e/SingleSKU.dat"
+ #define CARD_INFO_PATH			"/etc/wireless/mt7602e/RT2860STACard.dat"
 #define STA_DRIVER_VERSION		"3.0.0.2"
 #endif /* RTMP_MAC_PCI */
 

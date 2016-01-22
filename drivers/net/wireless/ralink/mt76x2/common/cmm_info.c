@@ -3365,9 +3365,9 @@ VOID RTMPIoctlGetMacTable(
 	RT_802_11_MAC_TABLE *pMacTab = NULL;
 	RT_802_11_MAC_ENTRY *pDst;
 	MAC_TABLE_ENTRY *pEntry;
-#ifdef DBG
+//#ifdef DBG
 	char *msg;
-#endif
+//#endif
 
 	wrq->u.data.length = 0;
 
@@ -3378,7 +3378,7 @@ VOID RTMPIoctlGetMacTable(
 	os_alloc_mem(NULL, (UCHAR **)&pMacTab, sizeof(RT_802_11_MAC_TABLE));
 	if (pMacTab == NULL)
 	{
-		DBGPRINT(RT_DEBUG_ERROR, ("%s: Allocate memory fail!!!\n", __FUNCTION__));
+		DBGPRINT(RT_DEBUG_OFF, ("%s: Allocate memory fail!!!\n", __FUNCTION__));
 		return;
 	}
 
@@ -3399,14 +3399,14 @@ VOID RTMPIoctlGetMacTable(
 	wrq->u.data.length = sizeof(RT_802_11_MAC_TABLE);
 	if (copy_to_user(wrq->u.data.pointer, pMacTab, wrq->u.data.length))
 	{
-		DBGPRINT(RT_DEBUG_TRACE, ("%s: copy_to_user() fail\n", __FUNCTION__));
+		DBGPRINT(RT_DEBUG_OFF, ("%s: copy_to_user() fail\n", __FUNCTION__));
 	}
 
-#ifdef DBG
+//#ifdef DBG
 	os_alloc_mem(NULL, (UCHAR **)&msg, sizeof(CHAR)*(MAX_LEN_OF_MAC_TABLE*MAC_LINE_LEN));
 	if (msg == NULL)
 	{
-		DBGPRINT(RT_DEBUG_ERROR, ("%s():Alloc memory failed\n", __FUNCTION__));
+		DBGPRINT(RT_DEBUG_OFF, ("%s():Alloc memory failed\n", __FUNCTION__));
 		goto LabelOK;
 	}
 
@@ -3438,11 +3438,11 @@ VOID RTMPIoctlGetMacTable(
 	} 
 	/* for compatible with old API just do the printk to console*/
 
-	DBGPRINT(RT_DEBUG_TRACE, ("%s", msg));
+	DBGPRINT(RT_DEBUG_OFF, ("%s", msg));
 	os_free_mem(NULL, msg);
 
 LabelOK:
-#endif
+//#endif
 	os_free_mem(NULL, pMacTab);
 }
 
