@@ -113,35 +113,18 @@ static void __init smvp_tc_init(unsigned int tc, unsigned int mvpconf0)
 	write_tc_c0_tchalt(TCHALT_H);
 }
 
-static void mp_send_ipi_single(int cpu, unsigned int action)
-{
-	unsigned long flags;
-
-	local_irq_save(flags);
-
-	switch (action) {
-	case SMP_CALL_FUNCTION:
-		gic_send_ipi(plat_ipi_call_int_xlate(cpu));
-		break;
-
-	case SMP_RESCHEDULE_YOURSELF:
-		gic_send_ipi(plat_ipi_resched_int_xlate(cpu));
-		break;
-	}
-
-	local_irq_restore(flags);
-}
-
 static void vsmp_send_ipi_single(int cpu, unsigned int action)
 {
 	int i;
 	unsigned long flags;
 	int vpflags;
 
+#ifdef CONFIG_MIPS_GIC_IPI
 	if (gic_present) {
-		mp_send_ipi_single(cpu, action);
+		gic_send_ipi_single(cpu, action);
 		return;
 	}
+#endif
 	local_irq_save(flags);
 
 	vpflags = dvpe();	/* can't access the other CPU's registers whilst MVPE enabled */
@@ -175,6 +158,14 @@ static void vsmp_send_ipi_mask(const struct cpumask *mask, unsigned int action)
 
 static void __cpuinit vsmp_init_secondary(void)
 {
+	struct cpuinfo_mips *c = &current_cpu_data;
+
+	c->core = (read_c0_ebase() & 0x3ff) >> (fls(smp_num_siblings)-1);
+#if defined(CONFIG_MIPS_MT_SMP) || defined(CONFIG_MIPS_MT_SMTC)
+	if (cpu_has_mipsmt)
+		c->vpe_id = (read_c0_tcbind() >> TCBIND_CURVPE_SHIFT) & TCBIND_CURVPE;
+#endif
+
 #ifdef CONFIG_IRQ_GIC
 	/* This is Malta specific: IPI,performance and timer interrupts */
 	if (gic_present)

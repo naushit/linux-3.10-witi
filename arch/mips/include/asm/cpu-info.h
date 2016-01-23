@@ -85,6 +85,11 @@ struct cpuinfo_mips {
 	unsigned int            segctl0; /* Memory Segmentation Control 0 */
 	unsigned int            segctl1; /* Memory Segmentation Control 1 */
 	unsigned int            segctl2; /* Memory Segmentation Control 2 */
+	/*
+	 * Cache Coherency attribute for write-combine memory writes.
+	 * (shifted by _CACHE_SHIFT)
+	 */
+	unsigned int		writecombine;
 } __attribute__((aligned(SMP_CACHE_BYTES)));
 
 extern struct cpuinfo_mips cpu_data[];
@@ -96,5 +101,11 @@ extern void cpu_report(void);
 
 extern const char *__cpu_name[];
 #define cpu_name_string()	__cpu_name[smp_processor_id()]
+
+#if defined(CONFIG_MIPS_MT_SMP) || defined(CONFIG_MIPS_MT_SMTC)
+# define cpu_vpe_id(cpuinfo)	((cpuinfo)->vpe_id)
+#else
+# define cpu_vpe_id(cpuinfo)	0
+#endif
 
 #endif /* __ASM_CPU_INFO_H */

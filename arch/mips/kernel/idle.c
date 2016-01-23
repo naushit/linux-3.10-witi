@@ -11,6 +11,7 @@
  * as published by the Free Software Foundation; either version
  * 2 of the License, or (at your option) any later version.
  */
+#include <linux/cpuidle.h>
 #include <linux/export.h>
 #include <linux/init.h>
 #include <linux/irqflags.h>
@@ -182,8 +183,11 @@ void __init check_wait(void)
 	case CPU_24K:
 	case CPU_34K:
 	case CPU_1004K:
+	case CPU_1074K:
 	case CPU_PROAPTIV:
+	case CPU_P5600:
 	case CPU_INTERAPTIV:
+	case CPU_M5150:
 		cpu_wait = r4k_wait;
 		if (read_c0_config7() & MIPS_CONF7_WII)
 			cpu_wait = r4k_wait_irqoff;
@@ -237,7 +241,7 @@ static void smtc_idle_hook(void)
 #endif
 }
 
-void arch_cpu_idle(void)
+static void mips_cpu_idle(void)
 {
 	smtc_idle_hook();
 	if (cpu_wait)
@@ -245,3 +249,20 @@ void arch_cpu_idle(void)
 	else
 		local_irq_enable();
 }
+
+void arch_cpu_idle(void)
+{
+	if (cpuidle_idle_call())
+		mips_cpu_idle();
+}
+
+#ifdef CONFIG_CPU_IDLE
+
+int mips_cpuidle_wait_enter(struct cpuidle_device *dev,
+			    struct cpuidle_driver *drv, int index)
+{
+	mips_cpu_idle();
+	return index;
+}
+
+#endif

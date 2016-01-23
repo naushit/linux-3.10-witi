@@ -28,9 +28,12 @@
  *  - flush_cache_sigtramp() flush signal trampoline
  *  - flush_icache_all() flush the entire instruction cache
  *  - flush_data_cache_page() flushes a page from the data cache
+ *  - __wback_cache_all() wback all data to physical memory (for last moment
+ *			before suspend to RAM)
  */
 extern void (*flush_cache_all)(void);
 extern void (*__flush_cache_all)(void);
+extern void (*__wback_cache_all)(void);
 extern void (*flush_cache_mm)(struct mm_struct *mm);
 #define flush_cache_dup_mm(mm)	do { (void) (mm); } while (0)
 extern void (*flush_cache_range)(struct vm_area_struct *vma,
@@ -115,6 +118,12 @@ unsigned long run_uncached(void *func);
 
 extern void *kmap_coherent(struct page *page, unsigned long addr);
 extern void kunmap_coherent(void);
+extern void *kmap_noncoherent(struct page *page, unsigned long addr);
+
+static inline void kunmap_noncoherent(void)
+{
+	kunmap_coherent();
+}
 
 #define ARCH_HAS_FLUSH_KERNEL_DCACHE_PAGE
 static inline void flush_kernel_dcache_page(struct page *page)

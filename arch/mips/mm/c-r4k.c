@@ -8,6 +8,7 @@
  * Copyright (C) 1999, 2000 Silicon Graphics, Inc.
  * Copyright (C) 2012, MIPS Technology, Leonid Yegoshin (yegoshin@mips.com)
  */
+#include <linux/cpu_pm.h>
 #include <linux/hardirq.h>
 #include <linux/init.h>
 #include <linux/highmem.h>
@@ -64,7 +65,7 @@ static inline void r4k_on_each_cpu(void (*func) (void *info), void *info)
 	preempt_enable();
 }
 
-#if defined(CONFIG_MIPS_CMP) && defined(CONFIG_SMP)
+#if defined(CONFIG_MIPS_CMP) || defined(CONFIG_MIPS_CPS)
 #define cpu_has_safe_index_cacheops 0
 #else
 #define cpu_has_safe_index_cacheops 1
@@ -465,6 +466,7 @@ static inline void local_r4k___flush_cache_all(void * args)
 	case CPU_R10000:
 	case CPU_R12000:
 	case CPU_R14000:
+	default:
 		r4k_blast_scache();
 	}
 }
@@ -472,6 +474,21 @@ static inline void local_r4k___flush_cache_all(void * args)
 static void r4k___flush_cache_all(void)
 {
 	r4k_indexop_on_each_cpu(local_r4k___flush_cache_all, NULL);
+}
+
+/*
+ * Write back all data from caches to physical memory so the rest of the system
+ * can be powered down for Suspend to RAM.
+ * We can assume we're running on a single processor with interrupts disabled.
+ */
+static void r4k___wback_cache_all(void)
+{
+	if (!cpu_has_inclusive_pcaches) {
+		r4k_blast_dcache();
+		wmb();
+	}
+	r4k_blast_scache();
+	__sync();
 }
 
 static inline int has_valid_asid(const struct mm_struct *mm)
@@ -1363,9 +1380,12 @@ static void __cpuinit probe_pcache(void)
 	case CPU_34K:
 	case CPU_74K:
 	case CPU_1004K:
+	case CPU_1074K:
 	case CPU_PROAPTIV:
+	case CPU_P5600:
 	case CPU_INTERAPTIV:
-		if (c->cputype == CPU_74K)
+	case CPU_M5150:
+		if ((c->cputype == CPU_74K) || (c->cputype == CPU_1074K))
 			alias_74k_erratum(c);
 		if (!(read_c0_config7() & MIPS_CONF7_IAR)) {
 			if (c->icache.waysize > PAGE_SIZE)
@@ -1654,7 +1674,7 @@ static int __init cca_setup(char *str)
 
 early_param("cca", cca_setup);
 
-static void __cpuinit coherency_setup(void)
+static void coherency_setup(void)
 {
 	if (mips_cca < 0 || mips_cca > 7)
 		mips_cca = read_c0_config() & CONF_CM_CMASK;
@@ -1752,6 +1772,7 @@ void __cpuinit r4k_cache_init(void)
 
 	flush_cache_all		= cache_noop;
 	__flush_cache_all	= r4k___flush_cache_all;
+	__wback_cache_all	= r4k___wback_cache_all;
 	flush_cache_mm		= r4k_flush_cache_mm;
 	flush_cache_page	= r4k_flush_cache_page;
 	flush_cache_range	= r4k_flush_cache_range;
@@ -1767,7 +1788,7 @@ void __cpuinit r4k_cache_init(void)
 	local_flush_icache_range	= local_r4k_flush_icache_range;
 
 #if defined(CONFIG_DMA_NONCOHERENT)
-	if (coherentio) {
+	if (coherentio > 0) {
 		_dma_cache_wback_inv	= (void *)cache_noop;
 		_dma_cache_wback	= (void *)cache_noop;
 		_dma_cache_inv		= (void *)cache_noop;
@@ -1798,3 +1819,26 @@ void __cpuinit r4k_cache_init(void)
 	coherency_setup();
 	board_cache_error_setup = r4k_cache_error_setup;
 }
+
+static int r4k_cache_pm_notifier(struct notifier_block *self, unsigned long cmd,
+			       void *v)
+{
+	switch (cmd) {
+	case CPU_PM_ENTER_FAILED:
+	case CPU_PM_EXIT:
+		coherency_setup();
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block r4k_cache_pm_notifier_block = {
+	.notifier_call = r4k_cache_pm_notifier,
+};
+
+int __init r4k_cache_init_pm(void)
+{
+	return cpu_pm_register_notifier(&r4k_cache_pm_notifier_block);
+}
+arch_initcall(r4k_cache_init_pm);

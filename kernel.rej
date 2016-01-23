@@ -1,0 +1,244 @@
+--- Makefile
++++ Makefile
+@@ -1,6 +1,6 @@
+ VERSION = 3
+ PATCHLEVEL = 10
+-SUBLEVEL = 14
++SUBLEVEL = 60
+ EXTRAVERSION =
+ NAME = TOSSUG Baby Fish
+ 
+--- arch/mips/Kconfig
++++ arch/mips/Kconfig
+@@ -328,6 +332,7 @@
+ 	select SYS_SUPPORTS_BIG_ENDIAN
+ 	select SYS_SUPPORTS_LITTLE_ENDIAN
+ 	select SYS_SUPPORTS_MIPS_CMP
++	select SYS_SUPPORTS_MIPS_CPS
+ 	select SYS_SUPPORTS_MULTITHREADING
+ 	select SYS_SUPPORTS_SMARTMIPS
+ 	select SYS_SUPPORTS_ZBOOT
+@@ -348,6 +353,7 @@
+ 	select DMA_NONCOHERENT
+ 	select IRQ_CPU
+ 	select IRQ_GIC
++	select LIBFDT
+ 	select MIPS_MSC
+ 	select SYS_HAS_CPU_MIPS32_R1
+ 	select SYS_HAS_CPU_MIPS32_R2
+--- arch/mips/include/asm/gic.h
++++ arch/mips/include/asm/gic.h
+@@ -24,8 +29,6 @@
+ #define GIC_TRIG_EDGE			1
+ #define GIC_TRIG_LEVEL			0
+ 
+-#define GIC_NUM_INTRS			(24 + NR_CPUS * 2)
+-
+ #define MSK(n) ((1 << (n)) - 1)
+ #define REG32(addr)		(*(volatile unsigned int *) (addr))
+ #define REG(base, offs)		REG32((unsigned long)(base) + offs##_##OFS)
+--- drivers/ata/ahci.c
++++ drivers/ata/ahci.c
+@@ -61,6 +61,7 @@
+ 	/* board IDs by feature in alphabetical order */
+ 	board_ahci,
+ 	board_ahci_ign_iferr,
++	board_ahci_noncq,
+ 	board_ahci_nosntf,
+ 	board_ahci_yes_fbs,
+ 
+@@ -119,6 +120,13 @@
+ 		.udma_mask	= ATA_UDMA6,
+ 		.port_ops	= &ahci_ops,
+ 	},
++	[board_ahci_noncq] = {
++		AHCI_HFLAGS	(AHCI_HFLAG_NO_NCQ),
++		.flags		= AHCI_FLAG_COMMON,
++		.pio_mask	= ATA_PIO4,
++		.udma_mask	= ATA_UDMA6,
++		.port_ops	= &ahci_ops,
++	},
+ 	[board_ahci_nosntf] = {
+ 		AHCI_HFLAGS	(AHCI_HFLAG_NO_SNTF),
+ 		.flags		= AHCI_FLAG_COMMON,
+@@ -292,6 +300,18 @@
+ 	{ PCI_VDEVICE(INTEL, 0x8d66), board_ahci }, /* Wellsburg RAID */
+ 	{ PCI_VDEVICE(INTEL, 0x8d6e), board_ahci }, /* Wellsburg RAID */
+ 	{ PCI_VDEVICE(INTEL, 0x23a3), board_ahci }, /* Coleto Creek AHCI */
++	{ PCI_VDEVICE(INTEL, 0x9c83), board_ahci }, /* Wildcat Point-LP AHCI */
++	{ PCI_VDEVICE(INTEL, 0x9c85), board_ahci }, /* Wildcat Point-LP RAID */
++	{ PCI_VDEVICE(INTEL, 0x9c87), board_ahci }, /* Wildcat Point-LP RAID */
++	{ PCI_VDEVICE(INTEL, 0x9c8f), board_ahci }, /* Wildcat Point-LP RAID */
++	{ PCI_VDEVICE(INTEL, 0x8c82), board_ahci }, /* 9 Series AHCI */
++	{ PCI_VDEVICE(INTEL, 0x8c83), board_ahci }, /* 9 Series AHCI */
++	{ PCI_VDEVICE(INTEL, 0x8c84), board_ahci }, /* 9 Series RAID */
++	{ PCI_VDEVICE(INTEL, 0x8c85), board_ahci }, /* 9 Series RAID */
++	{ PCI_VDEVICE(INTEL, 0x8c86), board_ahci }, /* 9 Series RAID */
++	{ PCI_VDEVICE(INTEL, 0x8c87), board_ahci }, /* 9 Series RAID */
++	{ PCI_VDEVICE(INTEL, 0x8c8e), board_ahci }, /* 9 Series RAID */
++	{ PCI_VDEVICE(INTEL, 0x8c8f), board_ahci }, /* 9 Series RAID */
+ 
+ 	/* JMicron 360/1/3/5/6, match class to avoid IDE function */
+ 	{ PCI_VENDOR_ID_JMICRON, PCI_ANY_ID, PCI_ANY_ID, PCI_ANY_ID,
+@@ -423,17 +443,29 @@
+ 	  .driver_data = board_ahci_yes_fbs },			/* 88se9128 */
+ 	{ PCI_DEVICE(PCI_VENDOR_ID_MARVELL_EXT, 0x9125),
+ 	  .driver_data = board_ahci_yes_fbs },			/* 88se9125 */
++	{ PCI_DEVICE_SUB(PCI_VENDOR_ID_MARVELL_EXT, 0x9178,
++			 PCI_VENDOR_ID_MARVELL_EXT, 0x9170),
++	  .driver_data = board_ahci_yes_fbs },			/* 88se9170 */
+ 	{ PCI_DEVICE(PCI_VENDOR_ID_MARVELL_EXT, 0x917a),
+ 	  .driver_data = board_ahci_yes_fbs },			/* 88se9172 */
+ 	{ PCI_DEVICE(PCI_VENDOR_ID_MARVELL_EXT, 0x9172),
++	  .driver_data = board_ahci_yes_fbs },			/* 88se9182 */
++	{ PCI_DEVICE(PCI_VENDOR_ID_MARVELL_EXT, 0x9182),
+ 	  .driver_data = board_ahci_yes_fbs },			/* 88se9172 */
+ 	{ PCI_DEVICE(PCI_VENDOR_ID_MARVELL_EXT, 0x9192),
+ 	  .driver_data = board_ahci_yes_fbs },			/* 88se9172 on some Gigabyte */
++	{ PCI_DEVICE(PCI_VENDOR_ID_MARVELL_EXT, 0x91a0),
++	  .driver_data = board_ahci_yes_fbs },
+ 	{ PCI_DEVICE(PCI_VENDOR_ID_MARVELL_EXT, 0x91a3),
+ 	  .driver_data = board_ahci_yes_fbs },
++	{ PCI_DEVICE(PCI_VENDOR_ID_MARVELL_EXT, 0x9230),
++	  .driver_data = board_ahci_yes_fbs },
++	{ PCI_DEVICE(PCI_VENDOR_ID_TTI, 0x0642),
++	  .driver_data = board_ahci_yes_fbs },
+ 
+ 	/* Promise */
+ 	{ PCI_VDEVICE(PROMISE, 0x3f20), board_ahci },	/* PDC42819 */
++	{ PCI_VDEVICE(PROMISE, 0x3781), board_ahci },   /* FastTrak TX8660 ahci-mode */
+ 
+ 	/* Asmedia */
+ 	{ PCI_VDEVICE(ASMEDIA, 0x0601), board_ahci },	/* ASM1060 */
+--- fs/ubifs/file.c
++++ fs/ubifs/file.c
+@@ -1524,8 +1524,7 @@
+ 	}
+ 
+ 	wait_for_stable_page(page);
+-	unlock_page(page);
+-	return 0;
++	return VM_FAULT_LOCKED;
+ 
+ out_unlock:
+ 	unlock_page(page);
+--- fs/ubifs/shrinker.c
++++ fs/ubifs/shrinker.c
+@@ -128,7 +128,6 @@
+ 			freed = ubifs_destroy_tnc_subtree(znode);
+ 			atomic_long_sub(freed, &ubifs_clean_zn_cnt);
+ 			atomic_long_sub(freed, &c->clean_zn_cnt);
+-			ubifs_assert(atomic_long_read(&c->clean_zn_cnt) >= 0);
+ 			total_freed += freed;
+ 			znode = zprev;
+ 		}
+--- include/linux/mtd/map.h
++++ include/linux/mtd/map.h
+@@ -365,7 +365,7 @@
+ 			bitpos = (map_bankwidth(map)-1-i)*8;
+ #endif
+ 			orig.x[0] &= ~(0xff << bitpos);
+-			orig.x[0] |= buf[i-start] << bitpos;
++			orig.x[0] |= (unsigned long)buf[i-start] << bitpos;
+ 		}
+ 	}
+ 	return orig;
+@@ -384,7 +384,7 @@
+ 
+ 	if (map_bankwidth(map) < MAP_FF_LIMIT) {
+ 		int bw = 8 * map_bankwidth(map);
+-		r.x[0] = (1 << bw) - 1;
++		r.x[0] = (1UL << bw) - 1;
+ 	} else {
+ 		for (i=0; i<map_words(map); i++)
+ 			r.x[i] = ~0UL;
+--- include/linux/skbuff.h
++++ include/linux/skbuff.h
+@@ -449,9 +443,6 @@
+ #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
+ 	struct nf_conntrack	*nfct;
+ #endif
+-#ifdef NET_SKBUFF_NF_DEFRAG_NEEDED
+-	struct sk_buff		*nfct_reasm;
+-#endif
+ #ifdef CONFIG_BRIDGE_NETFILTER
+ 	struct nf_bridge_info	*nf_bridge;
+ #endif
+@@ -2740,10 +2727,6 @@
+ 	nf_conntrack_get(src->nfct);
+ 	dst->nfctinfo = src->nfctinfo;
+ #endif
+-#ifdef NET_SKBUFF_NF_DEFRAG_NEEDED
+-	dst->nfct_reasm = src->nfct_reasm;
+-	nf_conntrack_get_reasm(src->nfct_reasm);
+-#endif
+ #ifdef CONFIG_BRIDGE_NETFILTER
+ 	dst->nf_bridge  = src->nf_bridge;
+ 	nf_bridge_get(src->nf_bridge);
+--- net/core/skbuff.c
++++ net/core/skbuff.c
+@@ -76,36 +78,6 @@
+ struct kmem_cache *skbuff_head_cache __read_mostly;
+ static struct kmem_cache *skbuff_fclone_cache __read_mostly;
+ 
+-static void sock_pipe_buf_release(struct pipe_inode_info *pipe,
+-				  struct pipe_buffer *buf)
+-{
+-	put_page(buf->page);
+-}
+-
+-static void sock_pipe_buf_get(struct pipe_inode_info *pipe,
+-				struct pipe_buffer *buf)
+-{
+-	get_page(buf->page);
+-}
+-
+-static int sock_pipe_buf_steal(struct pipe_inode_info *pipe,
+-			       struct pipe_buffer *buf)
+-{
+-	return 1;
+-}
+-
+-
+-/* Pipe buffer operations for a socket. */
+-static const struct pipe_buf_operations sock_pipe_buf_ops = {
+-	.can_merge = 0,
+-	.map = generic_pipe_buf_map,
+-	.unmap = generic_pipe_buf_unmap,
+-	.confirm = generic_pipe_buf_confirm,
+-	.release = sock_pipe_buf_release,
+-	.steal = sock_pipe_buf_steal,
+-	.get = sock_pipe_buf_get,
+-};
+-
+ /**
+  *	skb_panic - private function for out-of-line support
+  *	@skb:	buffer
+--- net/ipv6/exthdrs.c
++++ net/ipv6/exthdrs.c
+@@ -162,12 +162,6 @@
+ 		off += optlen;
+ 		len -= optlen;
+ 	}
+-	/* This case will not be caught by above check since its padding
+-	 * length is smaller than 7:
+-	 * 1 byte NH + 1 byte Length + 6 bytes Padding
+-	 */
+-	if ((padlen == 6) && ((off - skb_network_header_len(skb)) == 8))
+-		goto bad;
+ 
+ 	if (len == 0)
+ 		return true;
+--- scripts/Makefile.headersinst
++++ scripts/Makefile.headersinst
+@@ -78,7 +84,9 @@
+ quiet_cmd_install = INSTALL $(printdir) ($(words $(all-files))\
+                             file$(if $(word 2, $(all-files)),s))
+       cmd_install = \
+-        $(CONFIG_SHELL) $< $(installdir) $(input-files); \
++        $(CONFIG_SHELL) $< $(installdir) $(srcdir) $(input-files1-name); \
++        $(CONFIG_SHELL) $< $(installdir) $(oldsrcdir) $(input-files2-name); \
++        $(CONFIG_SHELL) $< $(installdir) $(gendir) $(input-files3-name); \
+         for F in $(wrapper-files); do                                   \
+                 echo "\#include <asm-generic/$$F>" > $(installdir)/$$F;    \
+         done;                                                           \

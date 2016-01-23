@@ -84,7 +84,7 @@ static int radeon_cs_parser_relocs(struct radeon_cs_parser *p)
 		   VRAM, also but everything into VRAM on AGP cards to avoid
 		   image corruptions */
 		if (p->ring == R600_RING_TYPE_UVD_INDEX &&
-		    (i == 0 || p->rdev->flags & RADEON_IS_AGP)) {
+		    (i == 0 || drm_pci_device_is_agp(p->rdev->ddev))) {
 			/* TODO: is this still needed for NI+ ? */
 			p->relocs[i].lobj.domain =
 				RADEON_GEM_DOMAIN_VRAM;
@@ -95,6 +95,12 @@ static int radeon_cs_parser_relocs(struct radeon_cs_parser *p)
 		} else {
 			uint32_t domain = r->write_domain ?
 				r->write_domain : r->read_domains;
+
+			if (domain & RADEON_GEM_DOMAIN_CPU) {
+				DRM_ERROR("RADEON_GEM_DOMAIN_CPU is not valid "
+					  "for command submission\n");
+				return -EINVAL;
+			}
 
 			p->relocs[i].lobj.domain = domain;
 			if (domain == RADEON_GEM_DOMAIN_VRAM)

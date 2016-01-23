@@ -43,6 +43,9 @@ static inline void plat_smp_setup(void)
 	mp_ops->smp_setup();
 }
 
+extern void gic_send_ipi_single(int cpu, unsigned int action);
+extern void gic_send_ipi_mask(const struct cpumask *mask, unsigned int action);
+
 #else /* !CONFIG_SMP */
 
 struct plat_smp_ops;
@@ -96,5 +99,14 @@ static inline int register_vsmp_smp_ops(void)
 	return -ENODEV;
 #endif
 }
+
+#ifdef CONFIG_MIPS_CPS
+extern int register_cps_smp_ops(void);
+#else
+static inline int register_cps_smp_ops(void)
+{
+	return -ENODEV;
+}
+#endif
 
 #endif /* __ASM_SMP_OPS_H */

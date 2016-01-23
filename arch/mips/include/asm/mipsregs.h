@@ -14,6 +14,7 @@
 #define _ASM_MIPSREGS_H
 
 #include <linux/linkage.h>
+#include <linux/types.h>
 #include <asm/hazards.h>
 #include <asm/war.h>
 
@@ -574,11 +575,23 @@
 #define MIPS_CONF1_PC		(_ULCAST_(1) <<	 4)
 #define MIPS_CONF1_MD		(_ULCAST_(1) <<	 5)
 #define MIPS_CONF1_C2		(_ULCAST_(1) <<	 6)
+#define MIPS_CONF1_DA_SHF	7
+#define MIPS_CONF1_DA_SZ	3
 #define MIPS_CONF1_DA		(_ULCAST_(7) <<	 7)
+#define MIPS_CONF1_DL_SHF	10
+#define MIPS_CONF1_DL_SZ	3
 #define MIPS_CONF1_DL		(_ULCAST_(7) << 10)
+#define MIPS_CONF1_DS_SHF	13
+#define MIPS_CONF1_DS_SZ	3
 #define MIPS_CONF1_DS		(_ULCAST_(7) << 13)
+#define MIPS_CONF1_IA_SHF	16
+#define MIPS_CONF1_IA_SZ	3
 #define MIPS_CONF1_IA		(_ULCAST_(7) << 16)
+#define MIPS_CONF1_IL_SHF	19
+#define MIPS_CONF1_IL_SZ	3
 #define MIPS_CONF1_IL		(_ULCAST_(7) << 19)
+#define MIPS_CONF1_IS_SHF	22
+#define MIPS_CONF1_IS_SZ	3
 #define MIPS_CONF1_IS		(_ULCAST_(7) << 22)
 #define MIPS_CONF1_TLBS_SHIFT   (25)
 #define MIPS_CONF1_TLBS_SIZE    (6)
@@ -656,6 +669,10 @@
 #define MIPS_CONF7_IAR		(_ULCAST_(1) << 10)
 #define MIPS_CONF7_RPS		(_ULCAST_(1) << 2)
 
+/* CMGCRBase bit definitions */
+#define MIPS_CMGCRB_BASE	11
+#define MIPS_CMGCRF_BASE	(~_ULCAST_((1 << MIPS_CMGCRB_BASE) - 1))
+
 /*  EntryHI bit definition */
 #define MIPS_EHINV		(_ULCAST_(1) << 10)
 
@@ -694,7 +711,7 @@
 #define MIPS_SEGCFG_UK		_ULCAST_(0)
 
 /* ebase register bit definition */
-#define MIPS_EBASE_WG           _ULCAST_(11)
+#define MIPS_EBASE_WG           (_ULCAST_(1) << 11)
 
 #ifndef __ASSEMBLY__
 
@@ -1172,14 +1189,14 @@ do {									\
 #define write_c0_ebase(val)	__write_32bit_c0_register($15, 1, val)
 
 /* MIPSR3 */
-#define read_c0_segctl0()	__read_32bit_c0_register($5, 2)
-#define write_c0_segctl0(val)	__write_32bit_c0_register($5, 2, val)
+#define read_c0_segctl0()	__read_ulong_c0_register($5, 2)
+#define write_c0_segctl0(val)	__write_ulong_c0_register($5, 2, val)
 
-#define read_c0_segctl1()	__read_32bit_c0_register($5, 3)
-#define write_c0_segctl1(val)	__write_32bit_c0_register($5, 3, val)
+#define read_c0_segctl1()	__read_ulong_c0_register($5, 3)
+#define write_c0_segctl1(val)	__write_ulong_c0_register($5, 3, val)
 
-#define read_c0_segctl2()	__read_32bit_c0_register($5, 4)
-#define write_c0_segctl2(val)	__write_32bit_c0_register($5, 4, val)
+#define read_c0_segctl2()	__read_ulong_c0_register($5, 4)
+#define write_c0_segctl2(val)	__write_ulong_c0_register($5, 4, val)
 
 /* Cavium OCTEON (cnMIPS) */
 #define read_c0_cvmcount()	__read_ulong_c0_register($9, 6)

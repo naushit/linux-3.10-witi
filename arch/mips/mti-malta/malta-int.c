@@ -53,6 +53,10 @@ static unsigned int ipi_map[NR_CPUS];
 
 static DEFINE_RAW_SPINLOCK(mips_irq_lock);
 
+#ifdef CONFIG_MIPS_GIC_IPI
+DECLARE_BITMAP(ipi_ints, GIC_NUM_INTRS);
+#endif
+
 static inline int mips_pcibios_iack(void)
 {
 	int irq;
@@ -131,16 +135,22 @@ static void malta_hw0_irqdispatch(void)
 
 static void malta_ipi_irqdispatch(void)
 {
-	int irq;
+#ifdef CONFIG_MIPS_GIC_IPI
+	unsigned long irq;
+	DECLARE_BITMAP(pending, GIC_NUM_INTRS);
 
+	gic_get_int_mask(pending, ipi_ints);
+
+	irq = find_first_bit(pending, GIC_NUM_INTRS);
+
+	while (irq < GIC_NUM_INTRS) {
+		do_IRQ(MIPS_GIC_IRQ_BASE + irq);
+
+		irq = find_next_bit(pending, GIC_NUM_INTRS, irq + 1);
+	}
+#endif
 	if (gic_compare_int())
 		do_IRQ(MIPS_GIC_IRQ_BASE);
-
-	irq = gic_get_int();
-	if (irq < 0)
-		return;	 /* interrupt has already been cleared */
-
-	do_IRQ(MIPS_GIC_IRQ_BASE + irq);
 }
 
 static void corehi_irqdispatch(void)
@@ -292,10 +302,6 @@ asmlinkage void plat_irq_dispatch(void)
 
 #ifdef CONFIG_MIPS_MT_SMP
 
-
-#define GIC_MIPS_CPU_IPI_RESCHED_IRQ	3
-#define GIC_MIPS_CPU_IPI_CALL_IRQ	4
-
 #define MIPS_CPU_IPI_RESCHED_IRQ 0	/* SW int 0 for resched */
 #define C_RESCHED C_SW0
 #define MIPS_CPU_IPI_CALL_IRQ 1		/* SW int 1 for resched */
@@ -311,6 +317,13 @@ static void ipi_call_dispatch(void)
 {
 	do_IRQ(MIPS_CPU_IRQ_BASE + MIPS_CPU_IPI_CALL_IRQ);
 }
+
+#endif /* CONFIG_MIPS_MT_SMP */
+
+#ifdef CONFIG_MIPS_GIC_IPI
+
+#define GIC_MIPS_CPU_IPI_RESCHED_IRQ	3
+#define GIC_MIPS_CPU_IPI_CALL_IRQ	4
 
 static irqreturn_t ipi_resched_interrupt(int irq, void *dev_id)
 {
@@ -337,7 +350,7 @@ static struct irqaction irq_call = {
 	.flags		= IRQF_PERCPU,
 	.name		= "IPI_call"
 };
-#endif /* CONFIG_MIPS_MT_SMP */
+#endif /* CONFIG_MIPS_GIC_IPI */
 
 static int gic_resched_int_base;
 static int gic_call_int_base;
@@ -470,7 +483,8 @@ int __init gcmp_probe(unsigned long addr, unsigned long size)
 
 	if (gcmp_present) {
 		printk("GCMP present\n");
-		if (GCMPGCB(GCMPREV) >= 6)
+		if (((GCMPGCB(GCMPREV) & GCMP_GCB_GCMPREV_MAJOR_MSK) >>
+		      GCMP_GCB_GCMPREV_MAJOR_SHF) >= 6)
 			cpu_data[0].options |= MIPS_CPU_CM2;
 		if (cpu_has_cm2 && (size > 0x8000)) {
 			GCMPGCB(GCML2S) = (confaddr + 0x8000) | 1;
@@ -497,7 +511,7 @@ void __init gcmp_setregion(int region, unsigned long base,
 	GCMPGCBn(CMxMASK, region) = mask | type;
 }
 
-#if defined(CONFIG_MIPS_MT_SMP)
+#ifdef CONFIG_MIPS_GIC_IPI
 static void __init fill_ipi_map1(int baseintr, int cpu, int cpupin)
 {
 	int intr = baseintr + cpu;
@@ -505,8 +519,9 @@ static void __init fill_ipi_map1(int baseintr, int cpu, int cpupin)
 	gic_intr_map[intr].pin = cpupin;
 	gic_intr_map[intr].polarity = GIC_POL_POS;
 	gic_intr_map[intr].trigtype = GIC_TRIG_EDGE;
-	gic_intr_map[intr].flags = GIC_FLAG_IPI;
+	gic_intr_map[intr].flags = 0;
 	ipi_map[cpu] |= (1 << (cpupin + 2));
+	bitmap_set(ipi_ints, intr, 1);
 }
 
 static void __init fill_ipi_map(void)
@@ -613,7 +628,7 @@ void __init arch_init_irq(void)
 	if (gic_present) {
 		/* FIXME */
 		int i;
-#if defined(CONFIG_MIPS_MT_SMP)
+#if defined(CONFIG_MIPS_GIC_IPI)
 		gic_call_int_base = GIC_NUM_INTRS -
 			(NR_CPUS - nr_cpu_ids) * 2 - nr_cpu_ids;
 		gic_resched_int_base = gic_call_int_base - nr_cpu_ids;
@@ -628,7 +643,7 @@ void __init arch_init_irq(void)
 		}
 		gic_init(GIC_BASE_ADDR, GIC_ADDRSPACE_SZ, gic_intr_map,
 				ARRAY_SIZE(gic_intr_map), MIPS_GIC_IRQ_BASE);
-#if defined(CONFIG_MIPS_MT_SMP)
+#if defined(CONFIG_MIPS_GIC_IPI)
 		/* set up ipi interrupts */
 		if (cpu_has_vint) {
 			set_vi_handler(MIPSCPU_INT_IPI0, malta_ipi_irqdispatch);

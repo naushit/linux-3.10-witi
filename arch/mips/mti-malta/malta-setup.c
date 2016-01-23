@@ -152,13 +152,17 @@ static void __init plat_setup_iocoherency(void)
 	if (plat_enable_iocoherency()) {
 		if (coherentio == 0)
 			pr_info("Hardware DMA cache coherency disabled\n");
-		else
+		else {
+			coherentio = 1;
 			pr_info("Hardware DMA cache coherency enabled\n");
+		}
 	} else {
 		if (coherentio == 1)
 			pr_info("Hardware DMA cache coherency unsupported, but enabled from command line!\n");
-		else
+		else {
+			coherentio = 0;
 			pr_info("Software DMA cache coherency enabled\n");
+		}
 	}
 #else
 	if (!plat_enable_iocoherency())
@@ -249,7 +253,7 @@ extern unsigned int mips_cca;
 
 void __init plat_eva_setup(void)
 {
-	unsigned int val;
+	unsigned long val;
 
 #ifdef CONFIG_EVA_OLD_MALTA_MAP
 
