@@ -47,12 +47,18 @@
 #include <linux/mutex.h>
 #include <linux/slab.h>
 #include <asm/unaligned.h>
+#ifdef CONFIG_SLHC
 #include <net/slhc_vj.h>
+#endif
 #include <linux/atomic.h>
 
 #include <linux/nsproxy.h>
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
+
+#if IS_ENABLED(CONFIG_RA_HW_NAT)
+#include "../../../net/nat/hw_nat/ra_nat.h"
+#endif
 
 #define PPP_VERSION	"2.4.2"
 
@@ -61,14 +67,23 @@
  */
 #define NP_IP	0		/* Internet Protocol V4 */
 #define NP_IPV6	1		/* Internet Protocol V6 */
+#ifndef CONFIG_PPP_ONLY_IP
 #define NP_IPX	2		/* IPX protocol */
 #define NP_AT	3		/* Appletalk protocol */
 #define NP_MPLS_UC 4		/* MPLS unicast */
 #define NP_MPLS_MC 5		/* MPLS multicast */
-#define NUM_NP	6		/* Number of NPs. */
+#endif
 
+#ifndef CONFIG_PPP_ONLY_IP
+#define NUM_NP	6		/* Number of NPs. */
+#else
+#define NUM_NP	2		/* Number of NPs. */
+#endif
+
+#ifdef CONFIG_PPP_MULTILINK
 #define MPHDRLEN	6	/* multilink protocol header length */
 #define MPHDRLEN_SSN	4	/* ditto with short sequence numbers */
+#endif
 
 /*
  * An instance of /dev/ppp can be associated with either a ppp
@@ -123,7 +138,9 @@ struct ppp {
 	unsigned int	xstate;		/* transmit state bits 68 */
 	unsigned int	rstate;		/* receive state bits 6c */
 	int		debug;		/* debug flags 70 */
+#ifdef CONFIG_SLHC
 	struct slcompress *vj;		/* state for VJ header compression */
+#endif
 	enum NPmode	npmode[NUM_NP];	/* what to do with each net proto 78 */
 	struct sk_buff	*xmit_pending;	/* a packet ready to go out 88 */
 	struct compressor *xcomp;	/* transmit packet compressor 8c */
@@ -302,6 +319,7 @@ static inline int proto_to_npindex(int proto)
 		return NP_IP;
 	case PPP_IPV6:
 		return NP_IPV6;
+#ifndef CONFIG_PPP_ONLY_IP
 	case PPP_IPX:
 		return NP_IPX;
 	case PPP_AT:
@@ -310,6 +328,7 @@ static inline int proto_to_npindex(int proto)
 		return NP_MPLS_UC;
 	case PPP_MPLS_MC:
 		return NP_MPLS_MC;
+#endif
 	}
 	return -EINVAL;
 }
@@ -318,10 +337,12 @@ static inline int proto_to_npindex(int proto)
 static const int npindex_to_proto[NUM_NP] = {
 	PPP_IP,
 	PPP_IPV6,
+#ifndef CONFIG_PPP_ONLY_IP
 	PPP_IPX,
 	PPP_AT,
 	PPP_MPLS_UC,
 	PPP_MPLS_MC,
+#endif
 };
 
 /* Translates an ethertype into an NP index */
@@ -332,6 +353,7 @@ static inline int ethertype_to_npindex(int ethertype)
 		return NP_IP;
 	case ETH_P_IPV6:
 		return NP_IPV6;
+#ifndef CONFIG_PPP_ONLY_IP
 	case ETH_P_IPX:
 		return NP_IPX;
 	case ETH_P_PPPTALK:
@@ -341,6 +363,7 @@ static inline int ethertype_to_npindex(int ethertype)
 		return NP_MPLS_UC;
 	case ETH_P_MPLS_MC:
 		return NP_MPLS_MC;
+#endif
 	}
 	return -1;
 }
@@ -349,10 +372,12 @@ static inline int ethertype_to_npindex(int ethertype)
 static const int npindex_to_ethertype[NUM_NP] = {
 	ETH_P_IP,
 	ETH_P_IPV6,
+#ifndef CONFIG_PPP_ONLY_IP
 	ETH_P_IPX,
 	ETH_P_PPPTALK,
 	ETH_P_MPLS_UC,
 	ETH_P_MPLS_MC,
+#endif
 };
 
 /*
@@ -570,11 +595,16 @@ static long ppp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct ppp_file *pf = file->private_data;
 	struct ppp *ppp;
-	int err = -EFAULT, val, val2, i;
+	int err = -EFAULT, val, i;
+#ifdef CONFIG_SLHC
+	int val2;
+#endif
 	struct ppp_idle idle;
 	struct npioctl npi;
 	int unit, cflags;
+#ifdef CONFIG_SLHC
 	struct slcompress *vj;
+#endif
 	void __user *argp = (void __user *)arg;
 	int __user *p = argp;
 
@@ -708,6 +738,7 @@ static long ppp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case PPPIOCSMAXCID:
+#ifdef CONFIG_SLHC
 		if (get_user(val, p))
 			break;
 		val2 = 15;
@@ -716,10 +747,8 @@ static long ppp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			val &= 0xffff;
 		}
 		vj = slhc_init(val2+1, val+1);
-		if (!vj) {
-			netdev_err(ppp->dev,
-				   "PPP: no memory (VJ compressor)\n");
-			err = -ENOMEM;
+		if (IS_ERR(vj)) {
+			err = PTR_ERR(vj);
 			break;
 		}
 		ppp_lock(ppp);
@@ -727,6 +756,7 @@ static long ppp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			slhc_free(ppp->vj);
 		ppp->vj = vj;
 		ppp_unlock(ppp);
+#endif
 		err = 0;
 		break;
 
@@ -1119,19 +1149,16 @@ pad_compress_skb(struct ppp *ppp, struct sk_buff *skb)
 {
 	struct sk_buff *new_skb;
 	int len;
-	int new_skb_size = ppp->dev->mtu +
-		ppp->xcomp->comp_extra + ppp->dev->hard_header_len;
-	int compressor_skb_size = ppp->dev->mtu +
-		ppp->xcomp->comp_extra + PPP_HDRLEN;
-	new_skb = alloc_skb(new_skb_size, GFP_ATOMIC);
+	int new_skb_size = ppp->dev->mtu + ppp->xcomp->comp_extra;
+	int compressor_skb_size = new_skb_size + PPP_HDRLEN;
+	new_skb = alloc_skb(new_skb_size + ppp->dev->hard_header_len, GFP_ATOMIC);
 	if (!new_skb) {
 		if (net_ratelimit())
 			netdev_err(ppp->dev, "PPP: no memory (comp pkt)\n");
 		return NULL;
 	}
 	if (ppp->dev->hard_header_len > PPP_HDRLEN)
-		skb_reserve(new_skb,
-			    ppp->dev->hard_header_len - PPP_HDRLEN);
+		skb_reserve(new_skb, ppp->dev->hard_header_len - PPP_HDRLEN);
 
 	/* compressor still expects A/C bytes in hdr */
 	len = ppp->xcomp->compress(ppp->xc_state, skb->data - 2,
@@ -1173,9 +1200,11 @@ static void
 ppp_send_frame(struct ppp *ppp, struct sk_buff *skb)
 {
 	int proto = PPP_PROTO(skb);
+#ifdef CONFIG_SLHC
 	struct sk_buff *new_skb;
 	int len;
 	unsigned char *cp;
+#endif
 
 	if (proto < 0x8000) {
 #ifdef CONFIG_PPP_FILTER
@@ -1198,6 +1227,7 @@ ppp_send_frame(struct ppp *ppp, struct sk_buff *skb)
 			ppp->last_xmit = jiffies;
 		skb_pull(skb, 2);
 #else
+
 		/* for data packets, record the time */
 		ppp->last_xmit = jiffies;
 #endif /* CONFIG_PPP_FILTER */
@@ -1208,6 +1238,7 @@ ppp_send_frame(struct ppp *ppp, struct sk_buff *skb)
 
 	switch (proto) {
 	case PPP_IP:
+#ifdef CONFIG_SLHC
 		if (!ppp->vj || (ppp->flags & SC_COMP_TCP) == 0)
 			break;
 		/* try to do VJ TCP header compression */
@@ -1239,6 +1270,7 @@ ppp_send_frame(struct ppp *ppp, struct sk_buff *skb)
 			cp[0] = 0;
 			cp[1] = proto;
 		}
+#endif
 		break;
 
 	case PPP_CCP:
@@ -1681,6 +1713,7 @@ ppp_input_error(struct ppp_channel *chan, int code)
 			ppp_do_recv(pch->ppp, skb, pch);
 		}
 	}
+
 	read_unlock_bh(&pch->upl);
 }
 
@@ -1710,15 +1743,20 @@ static void
 ppp_receive_error(struct ppp *ppp)
 {
 	++ppp->dev->stats.rx_errors;
+#ifdef CONFIG_SLHC
 	if (ppp->vj)
 		slhc_toss(ppp->vj);
+#endif
 }
 
 static void
 ppp_receive_nonmp_frame(struct ppp *ppp, struct sk_buff *skb)
 {
+#ifdef CONFIG_SLHC
 	struct sk_buff *ns;
-	int proto, len, npi;
+	int len;
+#endif
+	int proto, npi;
 
 	/*
 	 * Decompress the frame, if compressed.
@@ -1735,6 +1773,7 @@ ppp_receive_nonmp_frame(struct ppp *ppp, struct sk_buff *skb)
 	proto = PPP_PROTO(skb);
 	switch (proto) {
 	case PPP_VJC_COMP:
+#ifdef CONFIG_SLHC
 		/* decompress VJ compressed packets */
 		if (!ppp->vj || (ppp->flags & SC_REJ_COMP_TCP))
 			goto err;
@@ -1767,9 +1806,11 @@ ppp_receive_nonmp_frame(struct ppp *ppp, struct sk_buff *skb)
 		else if (len < skb->len)
 			skb_trim(skb, len);
 		proto = PPP_IP;
+#endif
 		break;
 
 	case PPP_VJC_UNCOMP:
+#ifdef CONFIG_SLHC
 		if (!ppp->vj || (ppp->flags & SC_REJ_COMP_TCP))
 			goto err;
 
@@ -1784,6 +1825,7 @@ ppp_receive_nonmp_frame(struct ppp *ppp, struct sk_buff *skb)
 			goto err;
 		}
 		proto = PPP_IP;
+#endif
 		break;
 
 	case PPP_CCP:
@@ -1813,7 +1855,8 @@ ppp_receive_nonmp_frame(struct ppp *ppp, struct sk_buff *skb)
 		/* the filter instructions are constructed assuming
 		   a four-byte PPP header on each packet */
 		if (ppp->pass_filter || ppp->active_filter) {
-			if (skb_unclone(skb, GFP_ATOMIC))
+			if (skb_cloned(skb) &&
+			    pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
 				goto err;
 
 			*skb_push(skb, 2) = 0;
@@ -1878,12 +1921,16 @@ ppp_decompress_frame(struct ppp *ppp, struct sk_buff *skb)
 			break;
 		}
 
-		ns = dev_alloc_skb(obuff_size);
+		ns = alloc_skb(obuff_size + ppp->dev->hard_header_len, GFP_ATOMIC);
 		if (!ns) {
 			netdev_err(ppp->dev, "ppp_decompress_frame: "
 				   "no memory\n");
 			goto err;
 		}
+		
+		if (ppp->dev->hard_header_len > PPP_HDRLEN)
+			skb_reserve(ns, ppp->dev->hard_header_len - PPP_HDRLEN);
+		
 		/* the decompressor still expects the A/C bytes in the hdr */
 		len = ppp->rcomp->decompress(ppp->rc_state, skb->data - 2,
 				skb->len + 2, ns->data, obuff_size);
@@ -1896,6 +1943,11 @@ ppp_decompress_frame(struct ppp *ppp, struct sk_buff *skb)
 			goto err;
 		}
 
+#if IS_ENABLED(CONFIG_RA_HW_NAT)
+#if !defined(HNAT_USE_TAILROOM)
+		memcpy(FOE_INFO_START_ADDR(ns), FOE_INFO_START_ADDR(skb), FOE_INFO_LEN); // copy FoE Info
+#endif
+#endif
 		consume_skb(skb);
 		skb = ns;
 		skb_put(skb, len);
@@ -2000,7 +2052,7 @@ ppp_receive_mp_frame(struct ppp *ppp, struct sk_buff *skb, struct channel *pch)
 	}
 
 	/* Pull completed packets off the queue and receive them. */
-	while ((skb = ppp_mp_reconstruct(ppp))) {
+	while ((skb = ppp_mp_reconstruct(ppp)) != NULL) {
 		if (pskb_may_pull(skb, 2))
 			ppp_receive_nonmp_frame(ppp, skb);
 		else {
@@ -2612,8 +2664,9 @@ find_compressor(int type)
 static void
 ppp_get_stats(struct ppp *ppp, struct ppp_stats *st)
 {
+#ifdef CONFIG_SLHC
 	struct slcompress *vj = ppp->vj;
-
+#endif
 	memset(st, 0, sizeof(*st));
 	st->p.ppp_ipackets = ppp->stats64.rx_packets;
 	st->p.ppp_ierrors = ppp->dev->stats.rx_errors;
@@ -2621,6 +2674,7 @@ ppp_get_stats(struct ppp *ppp, struct ppp_stats *st)
 	st->p.ppp_opackets = ppp->stats64.tx_packets;
 	st->p.ppp_oerrors = ppp->dev->stats.tx_errors;
 	st->p.ppp_obytes = ppp->stats64.tx_bytes;
+#ifdef CONFIG_SLHC
 	if (!vj)
 		return;
 	st->vj.vjs_packets = vj->sls_o_compressed + vj->sls_o_uncompressed;
@@ -2631,6 +2685,7 @@ ppp_get_stats(struct ppp *ppp, struct ppp_stats *st)
 	st->vj.vjs_tossed = vj->sls_i_tossed;
 	st->vj.vjs_uncompressedin = vj->sls_i_uncompressed;
 	st->vj.vjs_compressedin = vj->sls_i_compressed;
+#endif
 }
 
 /*
@@ -2792,10 +2847,12 @@ static void ppp_destroy_interface(struct ppp *ppp)
 	}
 
 	ppp_ccp_closed(ppp);
+#ifdef CONFIG_SLHC
 	if (ppp->vj) {
 		slhc_free(ppp->vj);
 		ppp->vj = NULL;
 	}
+#endif
 	skb_queue_purge(&ppp->file.xq);
 	skb_queue_purge(&ppp->file.rq);
 #ifdef CONFIG_PPP_MULTILINK
@@ -2953,21 +3010,46 @@ static void __exit ppp_cleanup(void)
  * by holding all_ppp_mutex
  */
 
+static int __unit_alloc(struct idr *p, void *ptr, int n)
+{
+	int unit, err;
+
+again:
+	if (!idr_pre_get(p, GFP_KERNEL)) {
+		pr_err("PPP: No free memory for idr\n");
+		return -ENOMEM;
+	}
+
+	err = idr_get_new_above(p, ptr, n, &unit);
+	if (err < 0) {
+		if (err == -EAGAIN)
+			goto again;
+		return err;
+	}
+
+	return unit;
+}
+
 /* associate pointer with specified number */
 static int unit_set(struct idr *p, void *ptr, int n)
 {
 	int unit;
 
-	unit = idr_alloc(p, ptr, n, n + 1, GFP_KERNEL);
-	if (unit == -ENOSPC)
-		unit = -EINVAL;
+	unit = __unit_alloc(p, ptr, n);
+	if (unit < 0)
+		return unit;
+	else if (unit != n) {
+		idr_remove(p, unit);
+		return -EINVAL;
+	}
+
 	return unit;
 }
 
 /* get new free unit number and associate pointer with it */
 static int unit_get(struct idr *p, void *ptr)
 {
-	return idr_alloc(p, ptr, 0, 0, GFP_KERNEL);
+	return __unit_alloc(p, ptr, 0);
 }
 
 /* put unit number back to a pool */

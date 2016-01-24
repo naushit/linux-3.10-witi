@@ -5029,8 +5029,11 @@ static BOOLEAN dynamic_channel_model_adjust(RTMP_ADAPTER *pAd)
 	{
 		INT k = 0;
 		UINT64 one_sec_total_traffic = pAd->RalinkCounters.OneSecRxOkCnt+pAd->RalinkCounters.OneSecTxFailCount+pAd->RalinkCounters.OneSecTxNoRetryOkCount+pAd->RalinkCounters.OneSecTxRetryOkCount;
-
+#if defined(CONFIG_RT_WITI_HACK)
+		if(one_sec_total_traffic < 0) // trying to debug
+#else
 		if(one_sec_total_traffic < 20)
+#endif
 		{
 			DBGPRINT(RT_DEBUG_TRACE, ("%s: total traffic : %lld < 20 , no dync vga \n", __FUNCTION__, one_sec_total_traffic));
 			no_dynamic_vga = TRUE;
@@ -5122,10 +5125,12 @@ static BOOLEAN dynamic_channel_model_adjust(RTMP_ADAPTER *pAd)
 	DBGPRINT(RT_DEBUG_INFO, ("%s:: dynamic ChE mode(0x%x)\n", 
 		__FUNCTION__, mode));
 
+#if defined(CONFIG_RT_WITI_HACK)
 	if (((pAd->chipCap.avg_rssi_all <= -76) && (pAd->CommonCfg.BBPCurrentBW == BW_80))
 		|| ((pAd->chipCap.avg_rssi_all <= -79) && (pAd->CommonCfg.BBPCurrentBW == BW_40))
 		|| ((pAd->chipCap.avg_rssi_all <= -82) && (pAd->CommonCfg.BBPCurrentBW == BW_20)))
 		no_dynamic_vga = TRUE;
+#endif
 	
 	if (((mode & 0xFF) != pAd->chipCap.dynamic_chE_mode) || no_dynamic_vga) {
 		pAd->chipCap.dynamic_chE_trigger = TRUE;

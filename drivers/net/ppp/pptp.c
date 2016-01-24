@@ -40,14 +40,6 @@
 #include <net/route.h>
 #include <net/gre.h>
 
-#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
-/*for FP*/
-uint32_t sync_tx_sequence = 0;
-uint32_t pptp_fast_path = 0;
-EXPORT_SYMBOL(sync_tx_sequence); 
-EXPORT_SYMBOL(pptp_fast_path); 
-extern uint32_t l2tp_fast_path;
-#endif
 #include <linux/uaccess.h>
 
 #define PPTP_DRIVER_VERSION "0.8.5"
@@ -55,7 +47,7 @@ extern uint32_t l2tp_fast_path;
 #define MAX_CALLID 65535
 
 static DECLARE_BITMAP(callid_bitmap, MAX_CALLID + 1);
-static struct pppox_sock **callid_sock;
+static struct pppox_sock __rcu **callid_sock;
 
 static DEFINE_SPINLOCK(chan_lock);
 
@@ -91,11 +83,11 @@ static const struct proto_ops pptp_ops;
 struct pptp_gre_header {
 	u8  flags;
 	u8  ver;
-	u16 protocol;
-	u16 payload_len;
-	u16 call_id;
-	u32 seq;
-	u32 ack;
+	__be16 protocol;
+	__be16 payload_len;
+	__be16 call_id;
+	__be32 seq;
+	__be32 ack;
 } __packed;
 
 static struct pppox_sock *lookup_chan(u16 call_id, __be32 s_addr)
@@ -252,12 +244,7 @@ static int pptp_xmit(struct ppp_channel *chan, struct sk_buff *skb)
 	hdr->call_id     = htons(opt->dst_addr.call_id);
 
 	hdr->flags      |= PPTP_GRE_FLAG_S;
-#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
-	hdr->seq    = htonl(++sync_tx_sequence);
-	opt->seq_sent = sync_tx_sequence;
-#else
 	hdr->seq         = htonl(++opt->seq_sent);
-#endif
 	if (opt->ack_sent != seq_recv)	{
 		/* send ack with this message */
 		hdr->ver |= PPTP_GRE_FLAG_A;
@@ -356,19 +343,11 @@ static int pptp_rcv_core(struct sock *sk, struct sk_buff *skb)
 
 	payload = skb->data + headersize;
 	/* check for expected sequence number */
-#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
-	if ( time_before(seq , opt->seq_recv + 1) || WRAPPED(opt->seq_recv, seq) ){
-#else
 	if (seq < opt->seq_recv + 1 || WRAPPED(opt->seq_recv, seq)) {
-#endif
 		if ((payload[0] == PPP_ALLSTATIONS) && (payload[1] == PPP_UI) &&
 				(PPP_PROTOCOL(payload) == PPP_LCP) &&
-		     ((payload[4] == PPP_LCP_ECHOREQ) || (payload[4] == PPP_LCP_ECHOREP)) ){
-#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
-			opt->seq_recv = seq; //set sequence back.
-#endif
+				((payload[4] == PPP_LCP_ECHOREQ) || (payload[4] == PPP_LCP_ECHOREP)))
 			goto allow_packet;
-		}
 	} else {
 		opt->seq_recv = seq;
 allow_packet:
@@ -441,6 +420,9 @@ static int pptp_bind(struct socket *sock, struct sockaddr *uservaddr,
 	struct pptp_opt *opt = &po->proto.pptp;
 	int error = 0;
 
+	if (sockaddr_len < sizeof(struct sockaddr_pppox))
+		return -EINVAL;
+
 	lock_sock(sk);
 
 	opt->src_addr = sp->sa_addr.pptp;
@@ -461,6 +443,9 @@ static int pptp_connect(struct socket *sock, struct sockaddr *uservaddr,
 	struct rtable *rt;
 	struct flowi4 fl4;
 	int error = 0;
+
+	if (sockaddr_len < sizeof(struct sockaddr_pppox))
+		return -EINVAL;
 
 	if (sp->sa_protocol != PX_PROTO_PPTP)
 		return -EINVAL;
@@ -507,6 +492,7 @@ static int pptp_connect(struct socket *sock, struct sockaddr *uservaddr,
 	po->chan.mtu -= PPTP_HEADER_OVERHEAD;
 
 	po->chan.hdrlen = 2 + sizeof(struct pptp_gre_header);
+	po->chan.hdrlen += HH_DATA_MOD + sizeof(struct iphdr);
 	error = ppp_register_channel(&po->chan);
 	if (error) {
 		pr_err("PPTP: failed to register PPP channel (%d)\n", error);
@@ -527,7 +513,9 @@ static int pptp_getname(struct socket *sock, struct sockaddr *uaddr,
 	int len = sizeof(struct sockaddr_pppox);
 	struct sockaddr_pppox sp;
 
-	sp.sa_family	  = AF_PPPOX;
+	memset(&sp.sa_addr, 0, sizeof(sp.sa_addr));
+
+	sp.sa_family    = AF_PPPOX;
 	sp.sa_protocol  = PX_PROTO_PPTP;
 	sp.sa_addr.pptp = pppox_sk(sock->sk)->proto.pptp.src_addr;
 
@@ -561,9 +549,6 @@ static int pptp_release(struct socket *sock)
 
 	pppox_unbind_sock(sk);
 	sk->sk_state = PPPOX_DEAD;
-#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
-	pptp_fast_path = 0;
-#endif
 
 	sock_orphan(sk);
 	sock->sk = NULL;
@@ -611,12 +596,7 @@ static int pptp_create(struct net *net, struct socket *sock)
 
 	opt->seq_sent = 0; opt->seq_recv = 0xffffffff;
 	opt->ack_recv = 0; opt->ack_sent = 0xffffffff;
-#if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
-       sync_tx_sequence = 0;
-       pptp_fast_path = 1;
-       l2tp_fast_path = 0;
-       printk("set pptp_fast_path = 1\n!!");
-#endif
+
 	error = 0;
 out:
 	return error;

@@ -115,5 +115,24 @@ config RT_MEMORY_OPTIMIZATION
 
 config RT_DEBUG
 	bool "Include Debug messages"
+	depends on !RT_MEMORY_OPTIMIZATION
 	default n
 
+config RT_DEBUG_LEVEL
+	int "Configure driver debug level (0 - silent, 5 - loud)"
+	default 1
+	range 0 5
+	depends on !RT_MEMORY_OPTIMIZATION
+	depends on RT_DEBUG
+	help
+	It set the print level of mt76x2e driver for debug.
+	    0 -- OFF
+	    1 -- ERROR
+	    2 -- WARN
+	    3 -- TRACE
+	    4 -- INFO
+	    5 -- LOUD
+
+config RT_WITI_HACK
+	bool "Hack a several driver code to workaround WITI wifi bugs"
+	default y

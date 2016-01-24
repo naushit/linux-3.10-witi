@@ -30,7 +30,7 @@ unsigned short wan_vid = CONFIG_RA_HW_NAT_WAN_VLANID;
 #if defined (CONFIG_RA_HW_NAT_PPTP_L2TP)
 int DebugLevel = 0;
 #else
-int DebugLevel = 1;
+int DebugLevel = 0; //it's annoying :(
 #endif
 extern unsigned int DebugPPP;
 extern int log_level;
