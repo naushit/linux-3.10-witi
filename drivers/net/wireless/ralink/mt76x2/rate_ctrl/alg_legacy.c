@@ -353,7 +353,7 @@ VOID APMlmeDynamicTxRateSwitching(RTMP_ADAPTER *pAd)
 
 
 		/* Check for low traffic case */
-#if defined (CONFIG_RT_WITI_HACK)
+#if defined (CONFIG_RT_WITI_HACK_MCS)
         if (TxTotalCnt <= 3)
 #else
 	if (TxTotalCnt <= 15)
@@ -1157,7 +1157,7 @@ VOID MlmeDynamicTxRateSwitching(
 			     (criteria copied from RT2500 for Netopia case)
 		*/
 
-#if defined (CONFIG_RT_WITI_HACK)
+#if defined (CONFIG_RT_WITI_HACK_MCS)
 		if (TxTotalCnt <= 3)
 #else
 		if (TxTotalCnt <= 15)
@@ -1450,7 +1450,7 @@ VOID StaQuickResponeForRateUpExec(
 			CASE 1. when TX samples are fewer than 15, then decide TX rate solely on RSSI
 			     (criteria copied from RT2500 for Netopia case)
 		*/
-#if defined (CONFIG_RT_WITI_HACK)
+#if defined (CONFIG_RT_WITI_HACK_MCS)
 		if (TxTotalCnt <= 2)
 #else
 		if (TxTotalCnt <= 12)

@@ -133,6 +133,10 @@ config RT_DEBUG_LEVEL
 	    4 -- INFO
 	    5 -- LOUD
 
-config RT_WITI_HACK
-	bool "Hack a several driver code to workaround WITI wifi bugs"
+config RT_WITI_HACK_MCS
+	bool "Hack an alg MCS/RSSI code to workaround WITI wifi bugs"
+	default y
+
+config RT_WITI_HACK_VGA
+	bool "Hack a dynamic VGA code to workaround WITI wifi bugs"
 	default y

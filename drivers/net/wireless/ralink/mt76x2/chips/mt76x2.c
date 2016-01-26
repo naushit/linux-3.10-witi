@@ -5029,7 +5029,7 @@ static BOOLEAN dynamic_channel_model_adjust(RTMP_ADAPTER *pAd)
 	{
 		INT k = 0;
 		UINT64 one_sec_total_traffic = pAd->RalinkCounters.OneSecRxOkCnt+pAd->RalinkCounters.OneSecTxFailCount+pAd->RalinkCounters.OneSecTxNoRetryOkCount+pAd->RalinkCounters.OneSecTxRetryOkCount;
-#if defined(CONFIG_RT_WITI_HACK)
+#if defined(CONFIG_RT_WITI_HACK_VGA)
 		if(one_sec_total_traffic < 0) // trying to debug
 #else
 		if(one_sec_total_traffic < 20)
@@ -5058,7 +5058,11 @@ static BOOLEAN dynamic_channel_model_adjust(RTMP_ADAPTER *pAd)
 					pEntry->DyncVgaOneSecTxCount = 0;
 					pEntry->DyncVgaOneSecRxCount = 0;
 
+#if defined(CONFIG_RT_WITI_HACK_VGA)
+					if(avg_rssi <= -76 && one_sec_total_trafficB > 0)
+#else
 					if(avg_rssi <= -76 && one_sec_total_trafficB > 20)
+#endif
 					{
 						DBGPRINT(RT_DEBUG_TRACE, 
 						("%s: long range sta %02X:%02X:%02X:%02X:%02X:%02X  rssi (%d) & one_sec_RX_traffic %d >20 change AVG RSSI to (%d)\n"
@@ -5125,7 +5129,7 @@ static BOOLEAN dynamic_channel_model_adjust(RTMP_ADAPTER *pAd)
 	DBGPRINT(RT_DEBUG_INFO, ("%s:: dynamic ChE mode(0x%x)\n", 
 		__FUNCTION__, mode));
 
-#if defined(CONFIG_RT_WITI_HACK)
+#if defined(CONFIG_RT_WITI_HACK_VGA)
 	if (((pAd->chipCap.avg_rssi_all <= -76) && (pAd->CommonCfg.BBPCurrentBW == BW_80))
 		|| ((pAd->chipCap.avg_rssi_all <= -79) && (pAd->CommonCfg.BBPCurrentBW == BW_40))
 		|| ((pAd->chipCap.avg_rssi_all <= -82) && (pAd->CommonCfg.BBPCurrentBW == BW_20)))
