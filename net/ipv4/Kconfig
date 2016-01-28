@@ -596,6 +596,8 @@ choice
 	config DEFAULT_HYBLA
 		bool "Hybla" if TCP_CONG_HYBLA=y
 
+	config DEFAULT_YEAH
+		bool "Yeah" if TCP_CONG_YEAH=y
 	config DEFAULT_VEGAS
 		bool "Vegas" if TCP_CONG_VEGAS=y
 
@@ -620,6 +622,7 @@ config TCP_CONG_CUBIC
 config DEFAULT_TCP_CONG
 	string
 	default "bic" if DEFAULT_BIC
+	default "yeah" if DEFAULT_YEAH
 	default "cubic" if DEFAULT_CUBIC
 	default "htcp" if DEFAULT_HTCP
 	default "hybla" if DEFAULT_HYBLA

@@ -167,6 +167,15 @@ static unsigned int fq_codel_drop(struct Qdisc *sch)
 	return idx;
 }
 
+static unsigned int fq_codel_qdisc_drop(struct Qdisc *sch)
+{
+	unsigned int prev_backlog;
+
+	prev_backlog = sch->qstats.backlog;
+	fq_codel_drop(sch);
+	return prev_backlog - sch->qstats.backlog;
+}
+
 static int fq_codel_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 {
 	struct fq_codel_sched_data *q = qdisc_priv(sch);
@@ -182,6 +191,8 @@ static int fq_codel_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		return ret;
 	}
 	idx--;
+	if (sch->q.qlen > 128)
+		skb = skb_reduce_truesize(skb);
 
 	codel_set_enqueue_time(skb);
 	flow = &q->flows[idx];
@@ -193,7 +204,6 @@ static int fq_codel_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		list_add_tail(&flow->flowchain, &q->new_flows);
 		q->new_flow_count++;
 		flow->deficit = q->quantum;
-		flow->dropped = 0;
 	}
 	if (++sch->q.qlen <= sch->limit)
 		return NET_XMIT_SUCCESS;
@@ -387,10 +397,15 @@ static int fq_codel_init(struct Qdisc *sch, struct nlattr *opt)
 	struct fq_codel_sched_data *q = qdisc_priv(sch);
 	int i;
 
-	sch->limit = 10*1024;
+	sch->limit = 1024;
 	q->flows_cnt = 1024;
+#if 1
 	q->quantum = psched_mtu(qdisc_dev(sch));
+	q->perturbation = prandom_u32();
+#else
+	q->quantum = 300;
 	q->perturbation = net_random();
+#endif
 	INIT_LIST_HEAD(&q->new_flows);
 	INIT_LIST_HEAD(&q->old_flows);
 	codel_params_init(&q->cparams);
@@ -593,14 +608,14 @@ static const struct Qdisc_class_ops fq_codel_class_ops = {
 	.walk		=	fq_codel_walk,
 };
 
-static struct Qdisc_ops fq_codel_qdisc_ops __read_mostly = {
+struct Qdisc_ops fq_codel_qdisc_ops __read_mostly = {
 	.cl_ops		=	&fq_codel_class_ops,
 	.id		=	"fq_codel",
 	.priv_size	=	sizeof(struct fq_codel_sched_data),
 	.enqueue	=	fq_codel_enqueue,
 	.dequeue	=	fq_codel_dequeue,
 	.peek		=	qdisc_peek_dequeued,
-	.drop		=	fq_codel_drop,
+	.drop		=	fq_codel_qdisc_drop,
 	.init		=	fq_codel_init,
 	.reset		=	fq_codel_reset,
 	.destroy	=	fq_codel_destroy,
@@ -609,6 +624,7 @@ static struct Qdisc_ops fq_codel_qdisc_ops __read_mostly = {
 	.dump_stats =	fq_codel_dump_stats,
 	.owner		=	THIS_MODULE,
 };
+EXPORT_SYMBOL(fq_codel_qdisc_ops);
 
 static int __init fq_codel_module_init(void)
 {
