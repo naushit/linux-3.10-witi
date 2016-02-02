@@ -374,6 +374,23 @@ config  RT2880_ROOTFS_IN_FLASH
         depends on SUPPORT_OPENWRT
 endchoice
 
+choice
+	prompt "UART Baud Rate"
+	default RT_UART_57600
+
+config RT_UART_57600
+	bool "57600"
+
+config RT_UART_115200
+	bool "115200"
+
+endchoice
+
+config  RALINK_UART_BRATE
+	int
+	default 57600 if RT_UART_57600
+	default 115200 if RT_UART_115200
+
 config BLK_DEV_RAM_SIZE
 	int 'Default RAM disk size'
 	default 8192

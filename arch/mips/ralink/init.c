@@ -55,6 +55,11 @@
 #if defined (CONFIG_IRQ_GIC)
 #include <asm/gcmpregs.h>
 #endif
+#if defined(CONFIG_OF)
+#include "common.h"
+#endif
+
+#define UART_BAUDRATE		CONFIG_RALINK_UART_BRATE
 
 extern unsigned long surfboard_sysclk;
 extern void show_sdk_patch_info(void);
@@ -725,27 +730,26 @@ static void serial_setbrg(unsigned long wBaud)
         clock_divisor =  (surfboard_sysclk / SURFBOARD_BAUD_DIV / wBaud);
 #endif
 
-        //fix at 57600 8 n 1 n
+        //fix 8 n 1 n
         IER(RALINK_SYSCTL_BASE + 0xC00) = 0;
         FCR(RALINK_SYSCTL_BASE + 0xC00) = 0;
         LCR(RALINK_SYSCTL_BASE + 0xC00) = (UART_LCR_WLEN8 | UART_LCR_DLAB);
         DLL(RALINK_SYSCTL_BASE + 0xC00) = clock_divisor & 0xff;
-        DLM(RALINK_SYSCTL_BASE + 0xC00) = clock_divisor >> 8;
+        DLM(RALINK_SYSCTL_BASE + 0xC00) = (clock_divisor >> 8) & 0xff;
         LCR(RALINK_SYSCTL_BASE + 0xC00) = UART_LCR_WLEN8;
 
 #if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_RALINK_MT7628)
         IER(RALINK_SYSCTL_BASE + 0xD00) = 0;
         FCR(RALINK_SYSCTL_BASE + 0xD00) = 0;
-        LCR(RALINK_SYSCTL_BASE + 0xD00) = (UART_LCR_WLEN8 | UART_LCR_DLAB);
         DLL(RALINK_SYSCTL_BASE + 0xD00) = clock_divisor & 0xff;
-        DLM(RALINK_SYSCTL_BASE + 0xD00) = clock_divisor >> 8;
+        DLM(RALINK_SYSCTL_BASE + 0xD00) = (clock_divisor >> 8) & 0xff;
         LCR(RALINK_SYSCTL_BASE + 0xD00) = UART_LCR_WLEN8;
 #else
-	IER(RALINK_SYSCTL_BASE + 0x500) = 0;
+				IER(RALINK_SYSCTL_BASE + 0x500) = 0;
         FCR(RALINK_SYSCTL_BASE + 0x500) = 0;
         LCR(RALINK_SYSCTL_BASE + 0x500) = (UART_LCR_WLEN8 | UART_LCR_DLAB);
         DLL(RALINK_SYSCTL_BASE + 0x500) = clock_divisor & 0xff;
-        DLM(RALINK_SYSCTL_BASE + 0x500) = clock_divisor >> 8;
+        DLM(RALINK_SYSCTL_BASE + 0x500) = (clock_divisor >> 8) & 0xff;
         LCR(RALINK_SYSCTL_BASE + 0x500) = UART_LCR_WLEN8;
 #endif
 }
@@ -774,7 +778,7 @@ __init void prom_init(void)
 
 	set_io_port_base(KSEG1);
 	write_c0_wired(0);
-	serial_init(57600);
+	serial_init(UART_BAUDRATE);
 
 	prom_init_serial_port();  /* Needed for Serial Console */
 	prom_setup_printf(prom_get_ttysnum());

@@ -41,18 +41,26 @@
 
 #include <asm/bootinfo.h>
 
-#if defined (CONFIG_RT2880_ROOTFS_IN_FLASH)
-#ifdef CONFIG_SYSFS
-char rt2880_cmdline[]="console=ttyS1,57600n8 root=/dev/mtdblock5";
+
+#if defined (CONFIG_CMDLINE_BOOL)
+char rt2880_cmdline[] = CONFIG_CMDLINE;
 #else
-char rt2880_cmdline[]="console=ttyS1,57600n8 root=1f05";
+#if defined (CONFIG_RT_UART_115200)
+#define TTY_BAUDRATE	"115200n8"
+#else
+#define TTY_BAUDRATE	"57600n8"
 #endif
+#if defined (CONFIG_RT2880_ROOTFS_IN_FLASH)
+#define MTD_ROOTFS_DEV	"root=/dev/mtdblock5"
 #elif defined (CONFIG_RT2880_ROOTFS_IN_RAM)
-char rt2880_cmdline[]="console=ttyS1,57600n8 root=/dev/ram0";
+#define MTD_ROOTFS_DEV	"root=/dev/ram0"
 #else
 #error "RT2880 Root File System not defined"
 #endif
+char rt2880_cmdline[]="console=ttyS1," TTY_BAUDRATE " " MTD_ROOTFS_DEV "";
+#endif
 
+#ifdef CONFIG_UBOOT_CMDLINE
 extern int prom_argc;
 extern int *_prom_argv;
 
@@ -61,6 +69,7 @@ extern int *_prom_argv;
  * This macro take care of sign extension.
  */
 #define prom_argv(index) ((char *)(((int *)(int)_prom_argv)[(index)]))
+#endif
 
 extern char arcs_cmdline[COMMAND_LINE_SIZE];
 
@@ -79,20 +88,23 @@ void  __init prom_init_cmdline(void)
 	cp = &(arcs_cmdline[0]);
 
 #ifdef CONFIG_UBOOT_CMDLINE
+	if (prom_argc > 1) {
 	while(actr < prom_argc) {
 	    strcpy(cp, prom_argv(actr));
 	    cp += strlen(prom_argv(actr));
 	    *cp++ = ' ';
 	    actr++;
 	}
-#else
+	} else
+#endif
+	{
 	strcpy(cp, rt2880_cmdline);
 	cp += strlen(rt2880_cmdline);
 	*cp++ = ' ';
-#endif
+	}
 
 	if (cp != &(arcs_cmdline[0])) /* get rid of trailing space */
 	    --cp;
 	*cp = '\0';
-	
 }
+	
