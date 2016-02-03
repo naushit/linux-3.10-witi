@@ -401,10 +401,10 @@ static int fq_codel_init(struct Qdisc *sch, struct nlattr *opt)
 	q->flows_cnt = 1024;
 #if 1
 	q->quantum = psched_mtu(qdisc_dev(sch));
-	q->perturbation = prandom_u32();
+	q->perturbation = net_random();
 #else
 	q->quantum = 300;
-	q->perturbation = net_random();
+	q->perturbation = prandom_u32();
 #endif
 	INIT_LIST_HEAD(&q->new_flows);
 	INIT_LIST_HEAD(&q->old_flows);

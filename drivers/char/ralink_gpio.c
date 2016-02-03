@@ -39,6 +39,7 @@
 #include <linux/interrupt.h>
 #include <linux/fs.h>
 #include <linux/sched.h>
+#include <linux/kmod.h>
 #ifdef CONFIG_RALINK_GPIO_LED
 #include <linux/timer.h>
 #endif
@@ -2566,7 +2567,7 @@ void ralink_gpio_notify_user(int usr)
 #endif
 
 	if (NULL == p) {
-		printk(KERN_ERR NAME ": no registered process to notify\n");
+//		printk(KERN_ERR NAME ": no registered process to notify\n");
 		return;
 	}
 
@@ -2750,12 +2751,12 @@ irqreturn_t ralink_gpio_irq_handler(int irq, void *irqaction)
 				record[i].rising = now;
 				if (time_before(now, record[i].falling + 200L)) {
 					//one click
-					printk("one click\n");
+					//printk("one click\n");
 					schedule_work(&gpio_event_click);
 				}
 				else {
 					//press for several seconds
-					printk("press for several seconds\n");
+					//printk("press for several seconds\n");
 					schedule_work(&gpio_event_hold);
 				}
 			}
@@ -2839,12 +2840,12 @@ irqreturn_t ralink_gpio_irq_handler(int irq, void *irqaction)
 				record[i].rising = now;
 				if (time_before(now, record[i].falling + 200L)) {
 					//one click
-					printk("i=%d, one click\n", i);
+					//printk("i=%d, one click\n", i);
 					schedule_work(&gpio_event_click);
 				}
 				else {
 					//press for several seconds
-					printk("i=%d, push several seconds\n", i);
+					//printk("i=%d, push several seconds\n", i);
 					schedule_work(&gpio_event_hold);
 				}
 			}
@@ -2960,11 +2961,11 @@ irqreturn_t ralink_gpio_irq_handler(int irq, void *irqaction)
 			else {
 				record[i].rising = now;
 				if (time_before(now, record[i].falling + 200L)) {
-					printk("i=%d, one click\n", i);
+					//printk("i=%d, one click\n", i);
 					schedule_work(&gpio_event_click);
 				}
 				else {
-					printk("i=%d, push several seconds\n", i);
+					//printk("i=%d, push several seconds\n", i);
 					schedule_work(&gpio_event_hold);
 				}
 			}
@@ -2985,11 +2986,11 @@ irqreturn_t ralink_gpio_irq_handler(int irq, void *irqaction)
 			else {
 				record[i].rising = now;
 				if (time_before(now, record[i].falling + 200L)) {
-					printk("i=%d, one click\n", i);
+					//printk("i=%d, one click\n", i);
 					schedule_work(&gpio_event_click);
 				}
 				else {
-					printk("i=%d, push several seconds\n", i);
+					//printk("i=%d, push several seconds\n", i);
 					schedule_work(&gpio_event_hold);
 				}
 			}
@@ -3011,11 +3012,11 @@ irqreturn_t ralink_gpio_irq_handler(int irq, void *irqaction)
 			else {
 				record[i].rising = now;
 				if (time_before(now, record[i].falling + 200L)) {
-					printk("i=%d, one click\n", i);
+					//printk("i=%d, one click\n", i);
 					schedule_work(&gpio_event_click);
 				}
 				else {
-					printk("i=%d, push several seconds\n", i);
+					//printk("i=%d, push several seconds\n", i);
 					schedule_work(&gpio_event_hold);
 				}
 			}
@@ -3037,11 +3038,11 @@ irqreturn_t ralink_gpio_irq_handler(int irq, void *irqaction)
 			else {
 				record[i].rising = now;
 				if (time_before(now, record[i].falling + 200L)) {
-					printk("i=%d, one click\n", i);
+					//printk("i=%d, one click\n", i);
 					schedule_work(&gpio_event_click);
 				}
 				else {
-					printk("i=%d, push several seconds\n", i);
+					//printk("i=%d, push several seconds\n", i);
 					schedule_work(&gpio_event_hold);
 				}
 			}

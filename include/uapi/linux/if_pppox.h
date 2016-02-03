@@ -47,6 +47,7 @@ struct pppoe_addr {
  */
 struct pptp_addr {
 	__be16		call_id;
+	__u16		pad;
 	struct in_addr	sin_addr;
 };
 
@@ -152,6 +153,5 @@ struct pppoe_hdr {
 /* Length of entire PPPoE + PPP header */
 #define PPPOE_SES_HLEN	8
 
-#define PPTP_SO_TIMEOUT 1
 
 #endif /* _UAPI__LINUX_IF_PPPOX_H */

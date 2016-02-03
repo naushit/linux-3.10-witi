@@ -12,10 +12,8 @@
  *		2 of the License, or (at your option) any later version.
  *
  */
-
 #ifndef __LINUX_IF_PPPOX_H
 #define __LINUX_IF_PPPOX_H
-
 
 #include <linux/types.h>
 #include <asm/byteorder.h>
@@ -83,6 +81,12 @@ struct sockaddr_pppol2tp {
 	struct pppol2tp_addr pppol2tp;
 } __attribute__((packed));
 
+struct sockaddr_pppol2tpin6 {
+	__kernel_sa_family_t sa_family; /* address family, AF_PPPOX */
+	unsigned int    sa_protocol;    /* protocol identifier */
+	struct pppol2tpin6_addr pppol2tp;
+} __attribute__((packed));
+
 /* The L2TPv3 protocol changes tunnel and session ids from 16 to 32
  * bits. So we need a different sockaddr structure.
  */
@@ -90,6 +94,12 @@ struct sockaddr_pppol2tpv3 {
 	__kernel_sa_family_t sa_family; /* address family, AF_PPPOX */
 	unsigned int    sa_protocol;    /* protocol identifier */
 	struct pppol2tpv3_addr pppol2tp;
+} __attribute__((packed));
+
+struct sockaddr_pppol2tpv3in6 {
+	__kernel_sa_family_t sa_family; /* address family, AF_PPPOX */
+	unsigned int    sa_protocol;    /* protocol identifier */
+	struct pppol2tpv3in6_addr pppol2tp;
 } __attribute__((packed));
 
 /*********************************************************************
@@ -148,6 +158,7 @@ struct pppoe_hdr {
 #ifdef __KERNEL__
 #include <linux/skbuff.h>
 #include <linux/workqueue.h>
+//#include <uapi/linux/if_pppox.h>
 
 static inline struct pppoe_hdr *pppoe_hdr(const struct sk_buff *skb)
 {
@@ -218,9 +229,9 @@ enum {
     PPPOX_CONNECTED	= 1,  /* connection established ==TCP_ESTABLISHED */
     PPPOX_BOUND		= 2,  /* bound to ppp device */
     PPPOX_RELAY		= 4,  /* forwarding is enabled */
+    PPPOX_ZOMBIE	= 8,  /* dead, but still bound to ppp device */
     PPPOX_DEAD		= 16  /* dead, useless, please clean me up!*/
 };
-
 #endif /* __KERNEL__ */
 
 #endif /* !(__LINUX_IF_PPPOX_H) */
