@@ -15,6 +15,7 @@
 #include <linux/of_fdt.h>
 #include <linux/kernel.h>
 #include <linux/bootmem.h>
+#include <linux/module.h>
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
 
@@ -22,12 +23,19 @@
 #include <asm/bootinfo.h>
 #include <asm/addrspace.h>
 
+#include <asm/mach-ralink/ralink_regs.h>
 #include "common.h"
 
 __iomem void *rt_sysc_membase;
+EXPORT_SYMBOL(rt_sysc_membase);
 __iomem void *rt_memc_membase;
 
 extern struct boot_param_header __dtb_start;
+extern struct boot_param_header __image_dtb;
+
+struct ralink_soc_info soc_info;
+enum ralink_soc_type ralink_soc;
+EXPORT_SYMBOL_GPL(ralink_soc);
 
 __iomem void *plat_of_remap_node(const char *node)
 {
@@ -36,15 +44,15 @@ __iomem void *plat_of_remap_node(const char *node)
 
 	np = of_find_compatible_node(NULL, NULL, node);
 	if (!np)
-		panic("Failed to find %s node", node);
+		printk("DTB: Failed to find %s node", node);
 
 	if (of_address_to_resource(np, 0, &res))
-		panic("Failed to get resource for %s", node);
+		printk("DTB: Failed to get resource for %s", node);
 
 	if ((request_mem_region(res.start,
 				resource_size(&res),
 				res.name) < 0))
-		panic("Failed to request resources for %s", node);
+		printk("DTB: Failed to request resources for %s", node);
 
 	return ioremap_nocache(res.start, resource_size(&res));
 }
@@ -54,8 +62,23 @@ void __init device_tree_init(void)
 	unsigned long base, size;
 	void *fdt_copy;
 
+	set_io_port_base(KSEG1);
+
+	/*
+	 * Load the builtin devicetree. This causes the chosen node to be
+	 * parsed resulting in our memory appearing
+	 */
+
+	printk ("DTB: device_tree_init - DBG\n");
+
+	__dt_setup_arch(&__image_dtb);
+
+
+	printk ("DTB: device_tree_init - after __dt_setup_arch - DBG\n");
 	if (!initial_boot_params)
 		return;
+
+	printk ("DTB: device_tree_init - initial_boot_params - DBG\n");
 
 	base = virt_to_phys((void *)initial_boot_params);
 	size = be32_to_cpu(initial_boot_params->totalsize);
@@ -74,8 +97,12 @@ void __init device_tree_init(void)
 	unflatten_device_tree();
 
 	/* free the space reserved for the dt blob */
-	free_bootmem(base, size);
+	//free_bootmem(base, size);
+	printk ("DTB: device_tree_init - end - DBG\n");
+
 }
+
+#if 0
 
 static int memory_dtb;
 
@@ -87,8 +114,9 @@ static int __init early_init_dt_find_memory(unsigned long node, const char *unam
 
 	return 0;
 }
+#endif
 
-extern struct boot_param_header __image_dtb;
+#if 0
 
 void __init plat_mem_setup(void)
 {
@@ -111,20 +139,32 @@ void __init plat_mem_setup(void)
 				     soc_info.mem_size_min * SZ_1M,
 				     soc_info.mem_size_max * SZ_1M);
 }
+#endif
 
 static int __init plat_of_setup(void)
 {
-	static struct of_device_id of_ids[3];
-	int len = sizeof(of_ids[0].compatible);
+//	static struct of_device_id of_ids[3];
+//	int len = sizeof(of_ids[0].compatible);
 
-	if (!of_have_populated_dt())
-		panic("device tree not present");
+	printk ("DTB: plat_of_setup - DBG\n");
 
-	strncpy(of_ids[0].compatible, soc_info.compatible, len);
-	strncpy(of_ids[1].compatible, "palmbus", len);
+	if (of_have_populated_dt())
+	    {
+	    printk("DTB: going to populate DT - DBG\n");
+/*	    strncpy(of_ids[0].compatible, soc_info.compatible, len);
+	    strncpy(of_ids[1].compatible, "palmbus", len);
+	    if (of_platform_populate(NULL, of_ids, NULL, NULL))
+		{
+		printk("DTB: failed to populate DT\n");
+		} else {
+		printk("DTB: DT has been populated - DBG\n");
+		}
+*/	    } else {
+	    printk("DTB: device tree not present\n");
+	    }
 
-	if (of_platform_populate(NULL, of_ids, NULL, NULL))
-		panic("failed to populate DT\n");
+	/* make sure ithat the reset controller is setup early */
+//	ralink_rst_init();
 
 	return 0;
 }

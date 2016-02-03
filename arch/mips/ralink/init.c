@@ -55,9 +55,6 @@
 #if defined (CONFIG_IRQ_GIC)
 #include <asm/gcmpregs.h>
 #endif
-#if defined(CONFIG_OF)
-#include "common.h"
-#endif
 
 #define UART_BAUDRATE		CONFIG_RALINK_UART_BRATE
 
@@ -65,6 +62,8 @@ extern unsigned long surfboard_sysclk;
 extern void show_sdk_patch_info(void);
 //extern unsigned long mips_machgroup;
 u32 mips_cpu_feq;
+u32 ralink_asic_rev_id;
+EXPORT_SYMBOL(ralink_asic_rev_id);
 
 /* Environment variable */
 typedef struct {
@@ -131,9 +130,12 @@ static inline void str2eaddr(unsigned char *ea, unsigned char *str)
 
 #if defined(CONFIG_RALINK_MT7620)
 #define RALINK_SYSTEM_CONTROL_BASE	0xB0000000
+
 #define REVID				*(unsigned int *)(RALINK_SYSTEM_CONTROL_BASE + 0x0c)
+
 #define RALINK_CLKCFG1			*(unsigned int *)(RALINK_SYSTEM_CONTROL_BASE + 0x30)
 #define RALINK_RSTCTRL			*(unsigned int *)(RALINK_SYSTEM_CONTROL_BASE + 0x34)
+
 #define PPLL_CFG0			*(unsigned int *)(RALINK_SYSTEM_CONTROL_BASE + 0x98)
 #define PPLL_CFG1			*(unsigned int *)(RALINK_SYSTEM_CONTROL_BASE + 0x9c)
 #define PPLL_DRV			*(unsigned int *)(RALINK_SYSTEM_CONTROL_BASE + 0xa0)
@@ -302,14 +304,53 @@ int get_ethernet_addr(char *ethernet_addr)
 
 void prom_init_sysclk(void)
 {
+	const char *vendor_name, *ram_type = "SDRAM";
+	char asic_id[8];
+	int xtal = 40;
+	u32 reg, ocp_freq;
+	u8  clk_sel;
+#if defined (CONFIG_RT5350_ASIC) || defined (CONFIG_MT7620_ASIC) || \
+    defined (CONFIG_MT7621_ASIC) || defined (CONFIG_MT7628_ASIC)
+	u8  clk_sel2;
+#endif
 #if defined (CONFIG_RALINK_MT7621)
-	int cpu_fdiv = 0;
-	int cpu_ffrac = 0;
-	int fbdiv = 0;
+	u32 cpu_fdiv = 0;
+	u32 cpu_ffrac = 0;
+	u32 fbdiv = 0;
 #endif
 
-	u32 reg __maybe_unused;
+	reg = (*(volatile u32 *)(RALINK_SYSCTL_BASE + 0x00));
+	memcpy(asic_id, &reg, 4);
+	reg = (*(volatile u32 *)(RALINK_SYSCTL_BASE + 0x04));
+	memcpy(asic_id+4, &reg, 4);
+	asic_id[6] = '\0';
+	asic_id[7] = '\0';
+	ralink_asic_rev_id = (*(volatile u32 *)(RALINK_SYSCTL_BASE + 0x0c));
 
+#if defined (CONFIG_RALINK_MT7620)
+	/* PKG_ID [16:16], 0: DRQFN-148 (N/H), 1: TFBGA-269 (A) */
+	if (ralink_asic_rev_id & (1UL<<16))
+		asic_id[6] = 'A';
+	else
+		asic_id[6] = 'N';
+#elif defined (CONFIG_RALINK_MT7621)
+	/* CORE_NUM [17:17], 0: Single Core (S), 1: Dual Core (A) */
+	if (ralink_asic_rev_id & (1UL<<17))
+		asic_id[6] = 'A';
+	else
+		asic_id[6] = 'S';
+#elif defined (CONFIG_RALINK_MT7628)
+	/* Detect MT7688 via FUSE EE_CFG bit 20 */
+	reg = (*(volatile u32 *)(RALINK_SYSCTL_BASE + 0x08));
+	if (reg & (1UL<<20))
+		asic_id[4] = '8';
+
+	/* PKG_ID [16:16], 0: DRQFN-120 (KN), 1: DRQFN-156 (AN) */
+	if (ralink_asic_rev_id & (1UL<<16))
+		asic_id[6] = 'A';
+	else
+		asic_id[6] = 'K';
+#endif
 #if defined(CONFIG_RT2880_FPGA)
         mips_cpu_feq = 25000000; 
 #elif defined (CONFIG_RT3052_FPGA) || defined (CONFIG_RT3352_FPGA) || defined (CONFIG_RT2883_FPGA) || defined (CONFIG_RT3883_FPGA) || defined (CONFIG_RT5350_FPGA) 
@@ -319,48 +360,52 @@ void prom_init_sysclk(void)
 #elif defined (CONFIG_MT7621_FPGA)
         mips_cpu_feq = 50000000;
 #else
-        u8 clk_sel;
 
         reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x10)));
 
-#if defined (CONFIG_RT2880_ASIC)
-        clk_sel = (reg>>20) & 0x03;
-#elif defined (CONFIG_RT2883_ASIC) 
-        clk_sel = (reg>>18) & 0x03;
-#elif defined (CONFIG_RT3052_ASIC) 
+#if defined (CONFIG_RT3052_ASIC)
         clk_sel = (reg>>18) & 0x01;
 #elif defined (CONFIG_RT3352_ASIC) 
         clk_sel = (reg>>8) & 0x01;
+	if (!(reg & (1UL<<20)))
+		xtal = 20;
 #elif defined (CONFIG_RT5350_ASIC) 
-	{
-        u8 clk_sel2;
         clk_sel = (reg>>8) & 0x01;
         clk_sel2 = (reg>>10) & 0x01;
         clk_sel |= (clk_sel2 << 1 );
-	}
+	if (!(reg & (1UL<<20)))
+		xtal = 20;
 #elif defined (CONFIG_RT3883_ASIC) 
         clk_sel = (reg>>8) & 0x03;
 #elif defined (CONFIG_MT7620_ASIC) 
+	clk_sel = 0;		/* clock from CPU PLL (600MHz) */
+	clk_sel2 = (reg>>4) & 0x03;
+	if (!(reg & (1UL<<6)))
+		xtal = 20;
 	reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x58)));
-	if( reg & ((0x1UL) << 24) ){
+	if (reg & (0x1UL << 24))
 		clk_sel = 1;	/* clock from BBP PLL (480MHz ) */
-	}else{
-		clk_sel = 0;	/* clock from CPU PLL (600MHz) */
-
-
-	}
 #elif defined (CONFIG_MT7621_ASIC)
-	clk_sel = 0;
+	clk_sel = 0;	/* GPLL (500MHz) */
+	clk_sel2 = (reg>>4) & 0x03;
+	reg = (reg >> 6) & 0x7;
+	if (reg >= 6)
+		xtal = 25;
+	else if (reg <= 2)
+		xtal = 20;
 	reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x2C)));
-	if( reg & ((0x1UL) << 30)) {
-		clk_sel = 1; // CPU PLL
-	} else {
-		clk_sel = 0; // GPLL (500Mhz)
-	}
+	if (reg & (0x1UL << 30))
+		clk_sel = 1;	/* CPU PLL */
 #elif defined (CONFIG_RT6855_ASIC)
         clk_sel = 0;
 #elif defined (CONFIG_MT7628_ASIC)
-        clk_sel = 0;
+	clk_sel = 0;		/* CPU PLL (580/575MHz) */
+	clk_sel2 = reg & 0x01;
+	if (!(reg & (1UL<<6)))
+		xtal = 25;
+	reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x2C)));
+	if (reg & (0x1UL << 1))
+		clk_sel = 1;	/* BBP PLL (480MHz) */
 #else
 #error Please Choice System Type
 #endif
@@ -459,22 +504,45 @@ void prom_init_sysclk(void)
 #elif defined (CONFIG_RALINK_MT7620)
 	case 0:
 		reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x54)));
-		if(!(reg & CPLL_SW_CONFIG)){
-			mips_cpu_feq = (600*1000*1000);
-		}else{
+		if (reg & CPLL_SW_CONFIG) {
+			int rewrite_reg = 0;
+			u32 pll_mult_ratio;
+			u32 pll_div_ratio;
+			/* disable bit SSC_EN (wrong CPU_PLL frequency, cause system clock drift) */
+			if (reg & 0x80) {
+				reg &= ~(0x80);
+				rewrite_reg = 1;
+			}
+#if defined (CONFIG_RALINK_MT7620_PLL600)
+			pll_mult_ratio = (reg & CPLL_MULT_RATIO) >> CPLL_MULT_RATIO_SHIFT;
+			pll_div_ratio = (reg & CPLL_DIV_RATIO) >> CPLL_DIV_RATIO_SHIFT;
+			if (pll_mult_ratio != 6 || pll_div_ratio != 0) {
+				reg &= ~(CPLL_MULT_RATIO);
+				reg &= ~(CPLL_DIV_RATIO);
+				reg |=  (6 << CPLL_MULT_RATIO_SHIFT);
+				rewrite_reg = 1;
+			}
+#endif
+			if (rewrite_reg) {
+				(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x54))) = reg;
+				udelay(10);
+			}
+			
 			/* read CPLL_CFG0 to determine real CPU clock */
-			int mult_ratio = (reg & CPLL_MULT_RATIO) >> CPLL_MULT_RATIO_SHIFT;
-			int div_ratio = (reg & CPLL_DIV_RATIO) >> CPLL_DIV_RATIO_SHIFT;
-			mult_ratio += 24;	/* begin from 24 */
-			if(div_ratio == 0)	/* define from datasheet */
-				div_ratio = 2;
-			else if(div_ratio == 1)
-				div_ratio = 3;
-			else if(div_ratio == 2)
-				div_ratio = 4;
-			else if(div_ratio == 3)
-				div_ratio = 8;
-			mips_cpu_feq = ((BASE_CLOCK * mult_ratio ) / div_ratio) * 1000 * 1000;
+			pll_mult_ratio = (reg & CPLL_MULT_RATIO) >> CPLL_MULT_RATIO_SHIFT;
+			pll_div_ratio = (reg & CPLL_DIV_RATIO) >> CPLL_DIV_RATIO_SHIFT;
+			pll_mult_ratio += 24;	/* begin from 24 */
+			if(pll_div_ratio == 0)	/* define from datasheet */
+				pll_div_ratio = 2;
+			else if(pll_div_ratio == 1)
+				pll_div_ratio = 3;
+			else if(pll_div_ratio == 2)
+				pll_div_ratio = 4;
+			else if(pll_div_ratio == 3)
+				pll_div_ratio = 8;
+			mips_cpu_feq = ((BASE_CLOCK * pll_mult_ratio ) / pll_div_ratio) * 1000 * 1000;
+		} else {
+			mips_cpu_feq = (600*1000*1000);
 		}
 
 		break;
@@ -482,37 +550,37 @@ void prom_init_sysclk(void)
 		mips_cpu_feq = (480*1000*1000);
 		break;
 #elif defined (CONFIG_RALINK_MT7621)
-        case 0:
+	case 0: /* GPLL (500MHz) */
 		reg = (*(volatile u32 *)(RALINK_SYSCTL_BASE + 0x44));
 		cpu_fdiv = ((reg >> 8) & 0x1F);
 		cpu_ffrac = (reg & 0x1F);
                 mips_cpu_feq = (500 * cpu_ffrac / cpu_fdiv) * 1000 * 1000;
                 break;
-        case 1: //CPU PLL
+	case 1: /* CPU PLL */
 		reg = (*(volatile u32 *)(RALINK_MEMCTRL_BASE + 0x648));
-		fbdiv = ((reg >> 4) & 0x7F) + 1;
-		reg = (*(volatile u32 *)(RALINK_SYSCTL_BASE + 0x10)); 
-		reg = (reg >> 6) & 0x7;
-		if(reg >= 6) { //25Mhz Xtal
-			mips_cpu_feq = 25 * fbdiv * 1000 * 1000;
-		} else if(reg >=3) { //40Mhz Xtal
-			mips_cpu_feq = 20 * fbdiv * 1000 * 1000;
-		} else { // 20Mhz Xtal
-			/* TODO */
+#if defined(CONFIG_RALINK_MT7621_PLL900)
+		if ((reg & 0xff) != 0xc2) {
+			reg &= ~(0xff);
+			reg |=  (0xc2);
+			(*((volatile u32 *)(RALINK_MEMCTRL_BASE + 0x648))) = reg;
+			udelay(10);
 		}
+#endif
+		fbdiv = ((reg >> 4) & 0x7F) + 1;
+		if (xtal == 25)
+			mips_cpu_feq = 25 * fbdiv * 1000 * 1000;	/* 25Mhz Xtal */
+		else
+			mips_cpu_feq = 20 * fbdiv * 1000 * 1000;	/* 20/40Mhz Xtal */
 		break;
 #elif defined (CONFIG_RALINK_MT7628)
 	case 0:
-		reg = (*(volatile u32 *)(RALINK_SYSCTL_BASE + 0x10));
-		if (reg & 0x80)
-		{
-			/* 40MHz Xtal */
-			mips_cpu_feq = 580 * 1000 * 1000;
-		} else
-		{
-			/* 25MHZ Xtal */
-			mips_cpu_feq = 575 * 1000 * 1000;
-		}
+		if (xtal == 25)
+			mips_cpu_feq = 575 * 1000 * 1000;	/* 25MHZ Xtal */
+		else
+			mips_cpu_feq = 580 * 1000 * 1000;	/* 40MHz Xtal */
+		break;
+	case 1:
+		mips_cpu_feq = (480*1000*1000);
 		break;
 #else
 #error Please Choice Chip Type
@@ -537,6 +605,7 @@ void prom_init_sysclk(void)
 			surfboard_sysclk = (166*1000*1000);
 			break;
 		}
+		ram_type = "DDR2";
 	}
 	else { //SDR
 		switch (clk_sel) {
@@ -555,6 +624,10 @@ void prom_init_sysclk(void)
 		}
 	}
 
+#elif defined (CONFIG_RT3352_ASIC)
+	if ((reg>>17) & 0x1) {
+		ram_type = "DDR2";
+	}
 #elif defined(CONFIG_RT5350_ASIC)
 	switch (clk_sel) {
 	case 0:
@@ -574,60 +647,104 @@ void prom_init_sysclk(void)
 #elif defined (CONFIG_RALINK_RT6855)
 	surfboard_sysclk = mips_cpu_feq/4;
 #elif defined (CONFIG_RALINK_MT7620)
-	/* FIXME , SDR -> /4,   DDR -> /3, but currently "surfboard_sysclk" */
-	surfboard_sysclk = mips_cpu_feq/4;
-#elif defined (CONFIG_RALINK_MT7628)
-	surfboard_sysclk = mips_cpu_feq/3;
-#elif defined (CONFIG_RALINK_MT7621)
-	surfboard_sysclk = mips_cpu_feq/4;
-#elif defined (CONFIG_RALINK_RT2880)
-	surfboard_sysclk = mips_cpu_feq/2;
-#else
-	surfboard_sysclk = mips_cpu_feq/3;
-#endif
-	printk("\n The CPU frequence is set to %u MHz\n",mips_cpu_feq / 1000 / 1000);
-
-
-#ifdef CONFIG_RALINK_CPUSLEEP
-	printk("\n MIPS CPU sleep mode enabled.\n");
-#if defined (CONFIG_RALINK_MT7620) 
-#ifdef CONFIG_USB_SUPPORT
+	switch (clk_sel2) {
+	case 0:
+		surfboard_sysclk = mips_cpu_feq/4;	/* SDR 150MHz */
+		break;
+	case 1:
+		surfboard_sysclk = mips_cpu_feq/3;	/* DDR1 */
+		ram_type = "DDR1";
+		break;
+	case 2:
+		surfboard_sysclk = mips_cpu_feq/3;	/* DDR2 */
+		ram_type = "DDR2";
+		break;
+	case 3:
+		surfboard_sysclk = mips_cpu_feq/5;	/* SDR 120MHz */
+		break;
+	}
+	/* set CPU ratio for sleep mode (USB OCP must be >= 30MHz) */
 	reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x3C)));
-	reg &= ~(0x1F1F);
-	reg |= 0x303;
+	reg &= ~0x1F1F;
+	reg |=  0x0303;	/* CPU ratio 1/3 for sleep mode (OCP: 600/3/5 = 40 MHz) */
 	(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x3C))) = reg;
-#endif /* CONFIG_USB_SUPPORT */
-	reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x40)));
-	(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x40))) = (reg | 0x80000000);
+	udelay(10);
 #elif defined (CONFIG_RALINK_MT7621)
-	reg = (*((volatile u32 *)(RALINK_RBUS_MATRIXCTL_BASE + 0x14)));
-	(*((volatile u32 *)(RALINK_RBUS_MATRIXCTL_BASE + 0x14))) = (reg | 0xC0000000);
+	if (clk_sel2 & 0x01)
+		ram_type = "DDR2";
+	else
+		ram_type = "DDR3";
+	if (clk_sel2 & 0x02)
+		ocp_freq = mips_cpu_feq/4;	/* OCP_RATIO 1:4 */
+	else
+		ocp_freq = mips_cpu_feq/3;	/* OCP_RATIO 1:3 */
+	surfboard_sysclk = mips_cpu_feq/4;
 #elif defined (CONFIG_RALINK_MT7628)
-#ifdef CONFIG_USB_SUPPORT
+	surfboard_sysclk = mips_cpu_feq/3;
+	if (clk_sel2)
+		ram_type = "DDR1";
+	else
+		ram_type = "DDR2";
+	/* set CPU ratio for sleep mode (USB OCP must be >= 30MHz) */
 	reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x440)));
-	reg &= ~(0xf0f);
-	reg |= 0x606;
+	reg &= ~0x0f0f;
+	reg |=  0x0606;	/* CPU ratio 1/6 for sleep mode (OCP: 575/6/3 = 31 MHz) */
 	(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x440))) = reg;
-#else
-	reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x440)));
-	reg &= ~(0xf0f);
-	reg |= 0xa0a;
-	(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x440))) = reg;
-#endif /* CONFIG_USB_SUPPORT */
-	reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x444)));
-	(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x444))) = (reg | 0x80000000);
-#endif /* MT7620 */
-#endif /* CONFIG_RALINK_CPUSLEEP */
+	udelay(10);
 
-#if defined (CONFIG_RALINK_MT7628)
+	/* disable request preemption */
 	reg = (*((volatile u32 *)(RALINK_RBUS_MATRIXCTL_BASE + 0x0)));
-	(*((volatile u32 *)(RALINK_RBUS_MATRIXCTL_BASE + 0x0))) = (reg & ~(0x4000000));
+	reg &= ~0x04000000;
+	(*((volatile u32 *)(RALINK_RBUS_MATRIXCTL_BASE + 0x0))) = reg;
 
-	// MIPS reset apply to Andes
+	/* MIPS reset apply to Andes */
 	reg = (*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x38)));
-	(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x38))) = (reg | 0x200);
+	reg |= 0x200;
+	(*((volatile u32 *)(RALINK_SYSCTL_BASE + 0x38))) = reg;
+#else
+	surfboard_sysclk = mips_cpu_feq/3;
+#endif
+#if !defined (CONFIG_RALINK_MT7621)
+	ocp_freq = surfboard_sysclk;
 #endif
 
+#if defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) || \
+    defined (CONFIG_RALINK_MT7628)
+	vendor_name = "MediaTek";
+#else
+	vendor_name = "Ralink";
+#endif
+
+	printk("\n%s SoC: %s, RevID: %04X, RAM: %s, XTAL: %dMHz\n",
+		vendor_name,
+		asic_id,
+		ralink_asic_rev_id & 0xffff,
+		ram_type,
+		xtal
+	);
+
+	printk("CPU/OCP/SYS frequency: %d/%d/%d MHz\n",
+		mips_cpu_feq / 1000 / 1000,
+		ocp_freq / 1000 / 1000,
+		((int)(surfboard_sysclk / 1000 / 1000))
+	);
+
+
+
+	/* enable cpu sleep mode for power saving */
+#if defined (CONFIG_RALINK_SYSTICK_COUNTER) && defined (CONFIG_RALINK_CPUSLEEP)
+	printk("CPU sleep mode: ON\n");
+#if defined (CONFIG_RALINK_MT7621)
+	reg = (*((volatile u32 *)(RALINK_RBUS_MATRIXCTL_BASE + 0x14)));
+	reg |= 0xC0000000;
+	(*((volatile u32 *)(RALINK_RBUS_MATRIXCTL_BASE + 0x14))) = reg;
+#else
+	reg = (*((volatile u32 *)(RALINK_CPU_CLK_AUTO_CFG)));
+	reg |= 0x80000000;
+	(*((volatile u32 *)(RALINK_CPU_CLK_AUTO_CFG))) = reg;
+#endif
+
+#endif
 }
 
 /*

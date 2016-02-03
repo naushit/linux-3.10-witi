@@ -16,6 +16,8 @@ EXTRA_CFLAGS += -Werror
 obj-y    := reset.o init.o irq.o \
             memory.o printf.o cmdline.o setup.o time.o dev-i2c.o
 
+obj-$(CONFIG_OF) +=  of.o
+
 ifeq ($(CONFIG_MIPS_MT_SMP),y)
 	obj-y += malta-amon.o
 endif
@@ -26,11 +28,15 @@ obj-$(CONFIG_DWC_OTG) += lm.o
 obj-$(CONFIG_RALINK_TIMER_WDG) +=  ralink_kwdt.o
 obj-$(CONFIG_RALINK_TIMER_DFS) +=  rt_timer.o
 obj-$(CONFIG_RT_DMA) +=  dev-dma.o
+
+ifeq ($(CONFIG_OF),y)
+obj-$(CONFIG_RALINK_MT7621) += mt7621.o
+endif
+
 obj-$(CONFIG_MTK_MTD_NAND) +=  dev-nand.o
 ifeq ($(CONFIG_RALINK_MT7621),y)
 obj-$(CONFIG_MTD_ANY_RALINK) +=  dev-nand.o
 endif
-#obj-$(CONFIG_I2C_RALINK) +=  dev-i2c.o
 
 obj-$(CONFIG_RALINK_RT3883) +=  ehci_ohci.o udc.o
 obj-$(CONFIG_RALINK_RT3352) +=  ehci_ohci.o udc.o

@@ -140,6 +140,15 @@ FEXPORT(__kernel_entry)
 	j	kernel_entry
 #endif
 
+#ifdef CONFIG_IMAGE_CMDLINE_HACK
+	.ascii	"CMDLINE:"
+EXPORT(__image_cmdline)
+	.fill	0x400
+#endif /* CONFIG_IMAGE_CMDLINE_HACK */
+
+	.ascii  "OWRTDTB:"
+	EXPORT(__image_dtb)
+	.fill   0x4000
 	__REF
 
 #ifdef CONFIG_EVA

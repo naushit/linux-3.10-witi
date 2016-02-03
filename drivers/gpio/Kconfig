@@ -209,6 +209,12 @@ config GPIO_RCAR
 	help
 	  Say yes here to support GPIO on Renesas R-Car SoCs.
 
+config GPIO_RALINK
+	bool "Ralink GPIO Support"
+	depends on RALINK_MT7621 || RALINK_MT7620 || RALINK_MT7628
+	help
+	  Say yes here to support the Ralink SoC GPIO device
+
 config GPIO_SPEAR_SPICS
 	bool "ST SPEAr13xx SPI Chip Select as GPIO support"
 	depends on PLAT_SPEAR
@@ -703,6 +709,12 @@ config GPIO_MSIC
 	help
 	  Enable support for GPIO on intel MSIC controllers found in
 	  intel MID devices
+
+config GPIO_MT7621
+	bool "Mediatek GPIO Support"
+	depends on RALINK_MT7621
+	help
+	  Say yes here to support the Mediatek SoC GPIO device
 
 comment "USB GPIO expanders:"
 

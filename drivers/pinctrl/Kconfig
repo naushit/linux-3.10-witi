@@ -114,6 +114,11 @@ config PINCTRL_LANTIQ
 	select PINMUX
 	select PINCONF
 
+config PINCTRL_RT2880
+	bool
+	depends on RALINK_MT7620 || RALINK_MT7621 || RALINK_MT7628 || RALINK_MT763
+	select PINMUX
+
 config PINCTRL_FALCON
 	bool
 	depends on SOC_FALCON

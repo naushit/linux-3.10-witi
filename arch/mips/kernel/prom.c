@@ -84,6 +84,8 @@ void __init early_init_devtree(void *params)
 	/* Setup flat device-tree pointer */
 	initial_boot_params = params;
 
+	printk ("DTB: _early_init_devtree - DBG\n");
+
 	/* Retrieve various informations from the /chosen node of the
 	 * device-tree, including the platform type, initrd location and
 	 * size, and more ...
@@ -93,7 +95,7 @@ void __init early_init_devtree(void *params)
 
 	/* Scan memory nodes */
 	of_scan_flat_dt(early_init_dt_scan_root, NULL);
-	of_scan_flat_dt(early_init_dt_scan_memory_arch, NULL);
+//	of_scan_flat_dt(early_init_dt_scan_memory_arch, NULL);
 
 	/* try to load the mips machine name */
 	of_scan_flat_dt(early_init_dt_scan_model, NULL);
@@ -103,10 +105,11 @@ void __init __dt_setup_arch(struct boot_param_header *bph)
 {
 	if (be32_to_cpu(bph->magic) != OF_DT_HEADER) {
 		pr_err("DTB has bad magic, ignoring builtin OF DTB\n");
+		printk ("DTB: bad magic - DBG\n");
 
 		return;
 	}
-
+	printk ("DTB: _td_setup_arch - DBG\n");
 	initial_boot_params = bph;
 
 	early_init_devtree(initial_boot_params);
