@@ -130,7 +130,7 @@ endchoice
 
 config  RT_FIRST_IF_RF_OFFSET
 	hex "EEPROM FLASH Offset of 1st Wireless Interface"
-	depends on RT_FIRST_IF_EEPROM_FLASH
+#	depends on RT_FIRST_IF_EEPROM_FLASH
 	default 0x40000
 
 config  RT_FIRST_CARD
@@ -222,7 +222,7 @@ endchoice
 
 config  RT_SECOND_IF_RF_OFFSET
 	hex "EEPROM FLASH Offset of 2nd Wireless Interface"
-	depends on RT_SECOND_IF_EEPROM_FLASH
+#	depends on RT_SECOND_IF_EEPROM_FLASH
 	default 0x48000
 
 config  RT_SECOND_CARD
