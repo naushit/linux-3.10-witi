@@ -3354,6 +3354,114 @@ VOID RTMPIoctlGetMacTableStaInfo(
 	os_free_mem(NULL, pMacTab);
 }
 
+char* GetBW(int BW)
+{
+    switch(BW)
+    {
+    case BW_10:
+	return "10MHz";
+    case BW_20:
+	return "20MHz";
+    case BW_40:
+	return "40MHz";
+    case BW_80:
+	return "80MHz";
+    default:
+	return "N/A";
+    }
+}
+
+char* GetPhyMode(int Mode)
+{
+    switch(Mode)
+    {
+    case MODE_CCK:
+	return "CCK";
+    case MODE_OFDM:
+	return "OFDM";
+    case MODE_HTMIX:
+	return "HTMIX";
+    case MODE_HTGREENFIELD:
+	return "HT_GF";
+    case MODE_VHT:
+	return "VHT";
+    default:
+	return "N/A";
+    }
+}
+static int
+getMCS(MACHTTRANSMIT_SETTING HTSetting)
+{
+    int mcs_1ss = (int)HTSetting.field.MCS;
+
+    if (HTSetting.field.MODE >= MODE_VHT) {
+	if (mcs_1ss > 9)
+	    mcs_1ss %= 16;
+    }
+
+    return mcs_1ss;
+}
+
+static const int
+MCSMappingRateTable[] =
+{
+     2,  4,   11,  22,								// CCK
+
+    12,  18,  24,  36,  48,  72,  96, 108,						// OFDM
+
+    13,  26,  39,  52,  78, 104, 117, 130, 26,  52,  78, 104, 156, 208, 234, 260,	// 11n: 20MHz, 800ns GI, MCS: 0 ~ 15
+    39,  78, 117, 156, 234, 312, 351, 390,						// 11n: 20MHz, 800ns GI, MCS: 16 ~ 23
+    27,  54,  81, 108, 162, 216, 243, 270, 54, 108, 162, 216, 324, 432, 486, 540,	// 11n: 40MHz, 800ns GI, MCS: 0 ~ 15
+    81, 162, 243, 324, 486, 648, 729, 810,						// 11n: 40MHz, 800ns GI, MCS: 16 ~ 23
+    14,  29,  43,  57,  87, 115, 130, 144, 29, 59,   87, 115, 173, 230, 260, 288,	// 11n: 20MHz, 400ns GI, MCS: 0 ~ 15
+    43,  87, 130, 173, 260, 317, 390, 433,						// 11n: 20MHz, 400ns GI, MCS: 16 ~ 23
+    30,  60,  90, 120, 180, 240, 270, 300, 60, 120, 180, 240, 360, 480, 540, 600,	// 11n: 40MHz, 400ns GI, MCS: 0 ~ 15
+    90, 180, 270, 360, 540, 720, 810, 900,
+
+    13,  26,  39,  52,  78, 104, 117, 130, 156,					// 11ac: 20Mhz, 800ns GI, MCS: 0~8
+    27,  54,  81, 108, 162, 216, 243, 270, 324, 360,				// 11ac: 40Mhz, 800ns GI, MCS: 0~9
+    59, 117, 176, 234, 351, 468, 527, 585, 702, 780,				// 11ac: 80Mhz, 800ns GI, MCS: 0~9
+    14,  29,  43,  57,  87, 115, 130, 144, 173,					// 11ac: 20Mhz, 400ns GI, MCS: 0~8
+    30,  60,  90, 120, 180, 240, 270, 300, 360, 400,				// 11ac: 40Mhz, 400ns GI, MCS: 0~9
+    65, 130, 195, 260, 390, 520, 585, 650, 780, 867					// 11ac: 80Mhz, 400ns GI, MCS: 0~9
+};
+
+static int
+getRate(MACHTTRANSMIT_SETTING HTSetting)
+{
+    int rate_count = sizeof(MCSMappingRateTable)/sizeof(int);
+    int rate_index = 0;
+    int num_ss_vht = 1;
+
+    if (HTSetting.field.MODE >= MODE_VHT) {
+	int mcs_1ss = (int)HTSetting.field.MCS;
+	
+	if (mcs_1ss > 9) {
+	    num_ss_vht = (mcs_1ss / 16) + 1;
+	    mcs_1ss %= 16;
+	}
+	if (HTSetting.field.BW == BW_20)
+	    rate_index = 108 + ((unsigned char)HTSetting.field.ShortGI * 29) + mcs_1ss;
+	else if (HTSetting.field.BW == BW_40)
+	    rate_index = 117 + ((unsigned char)HTSetting.field.ShortGI * 29) + mcs_1ss;
+	else if (HTSetting.field.BW == BW_80)
+	    rate_index = 127 + ((unsigned char)HTSetting.field.ShortGI * 29) + mcs_1ss;
+    }
+    else if (HTSetting.field.MODE >= MODE_HTMIX)
+	rate_index = 12 + ((unsigned char)HTSetting.field.BW * 24) + ((unsigned char)HTSetting.field.ShortGI * 48) + ((unsigned char)HTSetting.field.MCS);
+    else if (HTSetting.field.MODE == MODE_OFDM)
+	rate_index = (unsigned char)(HTSetting.field.MCS) + 4;
+    else if (HTSetting.field.MODE == MODE_CCK)
+	rate_index = (unsigned char)(HTSetting.field.MCS);
+
+    if (rate_index < 0)
+	rate_index = 0;
+
+    if (rate_index >= rate_count)
+	rate_index = rate_count-1;
+
+    return (MCSMappingRateTable[rate_index] * num_ss_vht * 5)/10;
+}
 
 #define	MAC_LINE_LEN	(1+14+4+4+4+4+10+10+10+6+6)	/* "\n"+Addr+aid+psm+datatime+rxbyte+txbyte+current tx rate+last tx rate+"\n" */
 VOID RTMPIoctlGetMacTable(
@@ -3365,12 +3473,10 @@ VOID RTMPIoctlGetMacTable(
 	RT_802_11_MAC_TABLE *pMacTab = NULL;
 	RT_802_11_MAC_ENTRY *pDst;
 	MAC_TABLE_ENTRY *pEntry;
-//#ifdef DBG
 	char *msg;
-//#endif
 
 	wrq->u.data.length = 0;
-
+#if 0
 	if (wrq_len < sizeof(RT_802_11_MAC_TABLE))
 		return;
 
@@ -3401,8 +3507,8 @@ VOID RTMPIoctlGetMacTable(
 	{
 		DBGPRINT(RT_DEBUG_OFF, ("%s: copy_to_user() fail\n", __FUNCTION__));
 	}
+#endif
 
-//#ifdef DBG
 	os_alloc_mem(NULL, (UCHAR **)&msg, sizeof(CHAR)*(MAX_LEN_OF_MAC_TABLE*MAC_LINE_LEN));
 	if (msg == NULL)
 	{
@@ -3411,10 +3517,77 @@ VOID RTMPIoctlGetMacTable(
 	}
 
 	memset(msg, 0 ,MAX_LEN_OF_MAC_TABLE*MAC_LINE_LEN );
+#if 1
+	sprintf(msg,"%s","\n");
+	sprintf(msg+strlen(msg),"%-19s%-7s%-7s%-4s%-4s%-5s%-5s%-6s%-6s%-5s%-4s%-12s\n",
+	       "MAC", "PhyMode", " BW", "MCS", "SGI", "LDPC", "STBC", "TRate", "RRate", "RSSI", "PSM", "Connect Time");
+
+
+#else
 	sprintf(msg,"%s","\n");
 	sprintf(msg+strlen(msg),"%-14s%-4s%-4s%-4s%-4s%-6s%-6s%-10s%-10s%-10s\n",
 		"MAC", "AP",  "AID", "PSM", "AUTH", "CTxR", "LTxR","LDT", "RxB", "TxB");
+#endif
 	
+#if 1
+	int hr, min, sec, rssi;
+	RT_802_11_MAC_TABLE *mp = NULL;
+	MACHTTRANSMIT_SETTING hT;
+
+	os_alloc_mem(NULL, (UCHAR **)&mp, sizeof(RT_802_11_MAC_TABLE));
+	if (mp == NULL)
+	{
+		DBGPRINT(RT_DEBUG_OFF, ("%s: Allocate memory fail!!!\n", __FUNCTION__));
+		return;
+	}
+
+	NdisZeroMemory(mp, sizeof(RT_802_11_MAC_TABLE));
+	for (i=0; i<MAX_LEN_OF_MAC_TABLE; i++)
+	{
+		pEntry = &(pAd->MacTab.Content[i]);
+		if (IS_ENTRY_CLIENT(pEntry) && (pEntry->Sst == SST_ASSOC))
+		{
+			pDst = &mp->Entry[mp->Num];
+			pDst->ApIdx = (UCHAR)pEntry->apidx;
+			copy_mac_table_entry(pDst, pEntry);
+			mp->Num += 1;
+		}
+	}
+	for (i = 0; i < mp->Num; i++) {
+	    hr = mp->Entry[i].ConnectedTime / 3600;
+	    min = (mp->Entry[i].ConnectedTime % 3600) / 60;
+	    sec = mp->Entry[i].ConnectedTime - hr * 3600 - min * 60;
+	    rssi = -127;
+
+	    if ((int)mp->Entry[i].AvgRssi0 > rssi && mp->Entry[i].AvgRssi0 != 0)
+	        rssi = (int)mp->Entry[i].AvgRssi0;
+	    if ((int)mp->Entry[i].AvgRssi1 > rssi && mp->Entry[i].AvgRssi1 != 0)
+		rssi = (int)mp->Entry[i].AvgRssi1;
+	    if ((int)mp->Entry[i].AvgRssi2 > rssi && mp->Entry[i].AvgRssi2 != 0)
+		rssi = (int)mp->Entry[i].AvgRssi2;
+	    hT.word = mp->Entry[i].LastRxRate;
+
+	    sprintf(msg+strlen(msg),"%02X:%02X:%02X:%02X:%02X:%02X  %-7s %5s %3d %3s %4s %4s %4dM %4dM %4d %3s %02d:%02d:%02d\n",
+		mp->Entry[i].Addr[0], mp->Entry[i].Addr[1], mp->Entry[i].Addr[2],
+		mp->Entry[i].Addr[3], mp->Entry[i].Addr[4], mp->Entry[i].Addr[5],
+		GetPhyMode(mp->Entry[i].TxRate.field.MODE),
+		GetBW(mp->Entry[i].TxRate.field.BW),
+		getMCS(mp->Entry[i].TxRate),
+		mp->Entry[i].TxRate.field.ShortGI ? "YES" : "NO",
+		mp->Entry[i].TxRate.field.ldpc ? "YES" : "NO",
+		mp->Entry[i].TxRate.field.STBC ? "YES" : "NO",
+		getRate(mp->Entry[i].TxRate),
+		getRate(hT),
+		rssi,
+		mp->Entry[i].Psm ? "YES" : "NO",
+		hr, min, sec
+	    );
+	};
+
+
+
+
+#else
 	for (i=0; i<MAX_LEN_OF_MAC_TABLE; i++)
 	{
 		pEntry = &(pAd->MacTab.Content[i]);
@@ -3437,13 +3610,19 @@ VOID RTMPIoctlGetMacTable(
 		}
 	} 
 	/* for compatible with old API just do the printk to console*/
-
 	DBGPRINT(RT_DEBUG_OFF, ("%s", msg));
+#endif
+	wrq->u.data.length = strlen(msg);
+	if (copy_to_user(wrq->u.data.pointer, msg, wrq->u.data.length))
+	{
+		DBGPRINT(RT_DEBUG_OFF, ("%s: copy_to_user() fail\n", __FUNCTION__));
+	}
+
 	os_free_mem(NULL, msg);
 
 LabelOK:
 //#endif
-	os_free_mem(NULL, pMacTab);
+	os_free_mem(NULL, mp);
 }
 
 #if defined(INF_AR9) || defined(BB_SOC)

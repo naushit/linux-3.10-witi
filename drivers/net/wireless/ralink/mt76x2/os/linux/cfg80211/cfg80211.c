@@ -42,8 +42,8 @@
 
 ***************************************************************************/
 
-
 #define RTMP_MODULE_OS
+#include <linux/version.h>
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0))
 #include <linux/random.h>

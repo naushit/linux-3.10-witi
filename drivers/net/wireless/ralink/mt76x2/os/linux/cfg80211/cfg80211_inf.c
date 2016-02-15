@@ -28,6 +28,7 @@
 */
 #define RTMP_MODULE_OS
 
+#include <linux/version.h>
 #include "rt_config.h" 
 #include "rtmp_comm.h"
 #include "rt_os_util.h"

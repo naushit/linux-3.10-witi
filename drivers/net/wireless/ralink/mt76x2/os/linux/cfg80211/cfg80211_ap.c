@@ -25,7 +25,7 @@
 
 #ifdef RT_CFG80211_SUPPORT
 #ifdef CONFIG_AP_SUPPORT
-
+#include <linux/version.h>
 #include "rt_config.h"
 
 static INT CFG80211DRV_UpdateTimIE(PRTMP_ADAPTER pAd, UINT mbss_idx, PUCHAR pBeaconFrame, UINT32 tim_ie_pos)

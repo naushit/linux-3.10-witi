@@ -25,7 +25,7 @@
 #define RTMP_MODULE_OS
 
 #ifdef RT_CFG80211_SUPPORT
-
+#include <linux/version.h>
 #include "rt_config.h"
 
 UCHAR CFG_WPS_OUI[4] = {0x00, 0x50, 0xf2, 0x04};

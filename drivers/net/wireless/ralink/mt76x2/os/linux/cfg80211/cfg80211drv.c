@@ -24,7 +24,7 @@
 #define RTMP_MODULE_OS
 
 #ifdef RT_CFG80211_SUPPORT
-
+#include <linux/version.h>
 #include "rt_config.h"
 
 extern struct notifier_block cfg80211_netdev_notifier;
