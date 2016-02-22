@@ -5030,7 +5030,7 @@ static BOOLEAN dynamic_channel_model_adjust(RTMP_ADAPTER *pAd)
 		INT k = 0;
 		UINT64 one_sec_total_traffic = pAd->RalinkCounters.OneSecRxOkCnt+pAd->RalinkCounters.OneSecTxFailCount+pAd->RalinkCounters.OneSecTxNoRetryOkCount+pAd->RalinkCounters.OneSecTxRetryOkCount;
 #if defined(CONFIG_RT_WITI_HACK_VGA)
-		if(one_sec_total_traffic < 0) // trying to debug
+		if(one_sec_total_traffic < 10) // trying to debug
 #else
 		if(one_sec_total_traffic < 20)
 #endif
@@ -5059,7 +5059,7 @@ static BOOLEAN dynamic_channel_model_adjust(RTMP_ADAPTER *pAd)
 					pEntry->DyncVgaOneSecRxCount = 0;
 
 #if defined(CONFIG_RT_WITI_HACK_VGA)
-					if(avg_rssi <= -76 && one_sec_total_trafficB > 0)
+					if(avg_rssi <= -76 && one_sec_total_trafficB > 10)
 #else
 					if(avg_rssi <= -76 && one_sec_total_trafficB > 20)
 #endif
@@ -5133,6 +5133,11 @@ static BOOLEAN dynamic_channel_model_adjust(RTMP_ADAPTER *pAd)
 	if (((pAd->chipCap.avg_rssi_all <= -76) && (pAd->CommonCfg.BBPCurrentBW == BW_80))
 		|| ((pAd->chipCap.avg_rssi_all <= -79) && (pAd->CommonCfg.BBPCurrentBW == BW_40))
 		|| ((pAd->chipCap.avg_rssi_all <= -82) && (pAd->CommonCfg.BBPCurrentBW == BW_20)))
+		no_dynamic_vga = TRUE;
+#else
+	if (((pAd->chipCap.avg_rssi_all <= -70) && (pAd->CommonCfg.BBPCurrentBW == BW_80))
+		|| ((pAd->chipCap.avg_rssi_all <= -75) && (pAd->CommonCfg.BBPCurrentBW == BW_40))
+		|| ((pAd->chipCap.avg_rssi_all <= -80) && (pAd->CommonCfg.BBPCurrentBW == BW_20)))
 		no_dynamic_vga = TRUE;
 #endif
 	
