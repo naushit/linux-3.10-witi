@@ -22,6 +22,7 @@
 #include <asm/asmmacro.h>
 
 	.set	mips1
+	S_HF
 	.align	5
 
 /*
