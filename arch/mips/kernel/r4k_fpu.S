@@ -21,6 +21,7 @@
 
 	.macro	EX insn, reg, src
 	.set	push
+	.set	hardfloat
 	.set	nomacro
 .ex\@:	\insn	\reg, \src
 	.set	pop
