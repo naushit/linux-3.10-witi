@@ -17,7 +17,6 @@
 #include <asm/regdef.h>
 
 	.set	noreorder
-	.set	hardfloat
 	.set	mips2
 	/* Save floating point context */
 	LEAF(_save_fp_context)

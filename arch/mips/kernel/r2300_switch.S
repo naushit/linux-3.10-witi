@@ -22,7 +22,6 @@
 #include <asm/asmmacro.h>
 
 	.set	mips1
-	.set	hardfloat
 	.align	5
 
 /*
