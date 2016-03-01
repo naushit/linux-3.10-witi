@@ -111,6 +111,11 @@ extern int nand_bbt_get(struct mtd_info *mtd, int page);
 int mtk_nand_read_oob_hw(struct mtd_info *mtd, struct nand_chip *chip, int page);
 #endif
 
+#if defined(CONFIG_SUPPORT_OPENWRT)
+int OpenWRT_rootfs_upgrading = 0;
+unsigned int rootfs_data_offset = 0;
+unsigned int rootfs_offset = 0;
+#endif
 //#define PMT 							1
 //#define _MTK_NAND_DUMMY_DRIVER_
 //#define __INTERNAL_USE_AHB_MODE__ 	(1)
@@ -2312,6 +2317,20 @@ static int block_remap(struct mtd_info *mtd, int block)
 		printk("ERROR!! can not find start_blk and end_blk\n");
 		return -1;
 	}
+#if defined(CONFIG_SUPPORT_OPENWRT)
+	if ((block >= (rootfs_offset >> chip->phys_erase_shift)) && (block < (rootfs_data_offset >> chip->phys_erase_shift)))
+	{
+		if (OpenWRT_rootfs_upgrading)
+		{
+			//printk("OpenWRT_rootfs_upgrading = 1 force unmap block %x\n", block);
+			return block;
+		}
+		start_blk = rootfs_offset >> chip->phys_erase_shift;
+		end_blk = rootfs_data_offset >> chip->phys_erase_shift;
+	}
+	else
+		return block;
+#endif
 
 	block_offset = block - start_blk;
 	for (j = start_blk; j <= end_blk;j++)
@@ -3309,6 +3328,17 @@ static int mtk_nand_erase(struct mtd_info *mtd, int page)
     int block = page / page_per_block;
 	int mapped_block = block;
 
+#if defined(CONFIG_SUPPORT_OPENWRT)
+	if (((page << chip->page_shift) >= (int)rootfs_offset) && ((page << chip->page_shift) < (int)rootfs_data_offset))
+	{
+		if (!OpenWRT_rootfs_upgrading)
+		{
+			OpenWRT_rootfs_upgrading = 1;
+			//printk("OpenWRT_rootfs_upgrading = 1\n");
+		}
+		//printk("Erasing page = %x\n", page);
+	}
+#endif
 #if defined(SKIP_BAD_BLOCK)
 	if (!is_skip_bad_block(mtd, page))
 	{
@@ -4722,6 +4752,10 @@ int mtk_nand_probe()
 	if (load_fact_bbt(mtd) == 0)
 	{
 		int i;
+		int total_block, bbt_size;
+
+		total_block = 1 << (nand_chip->chip_shift - nand_chip->phys_erase_shift);
+		bbt_size = total_block >> 2;
 
 		//for (i = 0; i < 0x100; i++)
 		//{
@@ -4729,12 +4763,12 @@ int mtk_nand_probe()
 		//	if (!((i+1) & 0x1f))
 		//		printk("\n");
 		//}
-		for (i = 0; i < 0x100; i++)
+		for (i = 0; i < bbt_size; i++)
 		{
 			nand_chip->bbt[i] |= fact_bbt[i];
 		}
 		//printk("\n");
-		for (i = 0; i < 0x100; i++)
+		for (i = 0; i < bbt_size; i++)
 		{
 			printk("%02x ", nand_chip->bbt[i]);
 			if (!((i+1) & 0x1f))
@@ -4840,6 +4874,9 @@ int mtk_nand_probe()
         nand_disable_clock();
 #if defined(SKIP_BAD_BLOCK)
 	shift_on_bbt = 1;
+#if defined(CONFIG_SUPPORT_OPENWRT)
+	printk("rootfs = %x to %x\n", (int)rootfs_offset, (int)rootfs_data_offset);
+#endif
 	// for debug
 	//{
 	//	int i;

@@ -313,6 +313,8 @@ static int udelay_recal(void)
 	lpj = (*((volatile u32 *)(RALINK_RBUS_MATRIXCTL_BASE + 0x10)));
         lpj &= ~(0xF << 8);
         lpj |= (0xA << 8);
+        lpj &= ~(0xF);
+        lpj |= (0xA);
         (*((volatile u32 *)(RALINK_RBUS_MATRIXCTL_BASE + 0x10))) = lpj;
 #endif
 

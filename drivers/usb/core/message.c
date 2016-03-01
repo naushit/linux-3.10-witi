@@ -1701,6 +1701,7 @@ int usb_set_configuration(struct usb_device *dev, int configuration)
 	struct usb_interface **new_interfaces = NULL;
 	struct usb_hcd *hcd = bus_to_hcd(dev->bus);
 	int n, nintf;
+	int shout_out_for_no_silent_failure = 1; /* USB-IF Embedded Host Compliance Plan */
 
 	if (dev->authorized == 0 || configuration == -1)
 		configuration = 0;
@@ -1902,6 +1903,17 @@ free_interfaces:
 			continue;
 		}
 		create_intf_ep_devs(intf);
+		if (device_is_registered(&intf->dev) == 1 && intf->dev.driver)
+			shout_out_for_no_silent_failure = 0;
+
+	}
+
+	/* USB-IF Embedded Host Compliance Plan */
+	if (shout_out_for_no_silent_failure == 1) {
+		if (dev->descriptor.idVendor == 0x1A0A && dev->descriptor.idProduct == 0x0200)
+			printk(KERN_EMERG "\n\nUSB EH test device!\nVendor=%x ProdID=%x\nManufacturer=%s Product=%s\n\n", dev->descriptor.idVendor, dev->descriptor.idProduct, dev->manufacturer ? dev->manufacturer : "", dev->product ? dev->product : "");
+		else 
+			printk(KERN_EMERG "\n\nUnsupported Device!\nVendor=%x ProdID=%x\nManufacturer=%s Product=%s\n\n", dev->descriptor.idVendor, dev->descriptor.idProduct, dev->manufacturer ? dev->manufacturer : "", dev->product ? dev->product : "");
 	}
 
 	usb_autosuspend_device(dev);

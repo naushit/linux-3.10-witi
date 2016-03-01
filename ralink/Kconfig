@@ -363,6 +363,22 @@ config RTDEV
 	default y if !SECOND_IF_NONE || RTDEV_MII
 	default y if RTDEV_PLC
 
+#SKB alloc selection
+config WIFI_SKB_ALLOC_SELECT
+        bool "SKB Allocation API Select"
+        default n
+choice
+        prompt "SKB Allocation API Selection"
+        depends on WIFI_SKB_ALLOC_SELECT
+        default WIFI_PAGE_ALLOC_SKB
+
+        config  WIFI_SLAB_ALLOC_SKB
+                bool "SLAB skb allocation"
+
+        config  WIFI_PAGE_ALLOC_SKB
+                bool "Page skb allocation"
+endchoice
+
 endmenu
 
 
@@ -382,7 +398,7 @@ config  RA_NAT_NONE
 bool "None"
 config  RA_NAT_HW
 bool "Hardware"
-depends on !RALINK_RT5350
+depends on !RALINK_RT5350 && !RALINK_MT7628
 endchoice
 
 source "net/nat/hw_nat/Kconfig"

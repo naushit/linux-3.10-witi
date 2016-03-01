@@ -495,7 +495,13 @@ struct _ipv6_6rd {
 	uint32_t dscp:8;
 	uint32_t ttl:8;
 	uint32_t flag:3;
+#if defined (CONFIG_ARCH_MT7623) || defined(CONFIG_ARCH_MT7622)
+	uint32_t resv1:13;
+	uint32_t per_flow_6rd_id:1;
+	uint32_t resv2:9;
+#else
 	uint32_t resv1:23;
+#endif
 	uint32_t act_dp:6;	/* UDF */
 
 	union {

@@ -349,7 +349,16 @@ int ralink_gpio_ioctl(struct inode *inode, struct file *file, unsigned int req,
 		*(volatile u32 *)(RALINK_REG_INTENA) = cpu_to_le32(RALINK_INTCTL_PIO);
 		break;
 	case RALINK_GPIO_DISABLE_INTP:
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_RALINK_MT7628)
+		*(volatile u32 *)(RALINK_REG_PIORENA) = 0;
+		*(volatile u32 *)(RALINK_REG_PIOFENA) = 0;
+		*(volatile u32 *)(RALINK_REG_PIO6332RENA) = 0;
+		*(volatile u32 *)(RALINK_REG_PIO6332FENA) = 0;
+		*(volatile u32 *)(RALINK_REG_PIO9564RENA) = 0;
+		*(volatile u32 *)(RALINK_REG_PIO9564FENA) = 0;
+#else
 		*(volatile u32 *)(RALINK_REG_INTDIS) = cpu_to_le32(RALINK_INTCTL_PIO);
+#endif
 		break;
 	case RALINK_GPIO_REG_IRQ:
 		copy_from_user(&info, (ralink_gpio_reg_info *)arg, sizeof(info));
@@ -1125,7 +1134,7 @@ static void ralink_gpio_led_do_timer(unsigned long unused)
 	}
 #else
 	#if defined (RALINK_GPIO_HAS_9532)
-	for (i = 0; i < 31; i++) {
+	for (i = 0; i < 32; i++) {
 		ralink_gpio_led_stat[i].ticks++;
 		if (ralink_gpio_led_data[i].gpio == -1){ //-1 means unused	
 			continue;

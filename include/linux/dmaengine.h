@@ -1035,7 +1035,7 @@ struct dma_pinned_list {
 struct dma_pinned_list *dma_pin_iovec_pages(struct iovec *iov, size_t len);
 void dma_unpin_iovec_pages(struct dma_pinned_list* pinned_list);
 
-#if defined (CONFIG_SPLICE_NET_DMA_SUPPORT)
+#if defined (CONFIG_SPLICE_NET_SUPPORT)
 struct dma_pinned_list *dma_pin_kernel_iovec_pages(struct iovec *iov, size_t len);
 void dma_unpin_kernel_iovec_pages(struct dma_pinned_list* pinned_list);
 #endif

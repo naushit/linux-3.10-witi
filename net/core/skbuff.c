@@ -844,14 +844,6 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	new->skb_recycling_callback = NULL;
 #endif
 
-#if defined(CONFIG_RA_HW_NAT) || defined(CONFIG_RA_HW_NAT_MODULE)
-#if defined (HNAT_USE_HEADROOM)
-        memcpy(new->head, old->head, FOE_INFO_LEN);
-#elif defined (HNAT_USE_TAILROOM)
-        memcpy( (new->head + (old->end - old->head) - FOE_INFO_LEN), (old->end - FOE_INFO_LEN), FOE_INFO_LEN); //copy tailroom
-#endif
-#endif
-	
 	skb_copy_secmark(new, old);
 }
 

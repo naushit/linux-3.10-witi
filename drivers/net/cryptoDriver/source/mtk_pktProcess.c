@@ -49,10 +49,10 @@ extern void mtk_interruptHandler_descriptorDone(void);
 #define DESCP_SIZE			32
 #define EIP93_RING_BUFFER	24
 
-static unsigned int cmdRingIdx, resRingIdx;
+static unsigned int cmdRingIdx, resRingIdx, cmdRingFrontIdx,resPrepRingIdx;
 static uint32_t *pEip93RegBase = (uint32_t *)EIP93_REG_BASE;
 
-static spinlock_t 			putlock, getlock;
+//static spinlock_t 			putlock, getlock;
 
 #ifdef WORKQUEUE_BH
 static DECLARE_WORK(mtk_interrupt_BH_result_wq, mtk_BH_handler_resultGet);
@@ -102,6 +102,7 @@ static void skb_dump(struct sk_buff* sk, const char* func,int line) {
 #define skb_dump(x,y,z) do {}while(0)
 #endif
 
+#if defined (CONFIG_HWCRYPTO_MEMPOOL)
 /************************************************************************
 *              P R I V A T E     F U N C T I O N S
 *************************************************************************
@@ -193,6 +194,7 @@ mtk_addrsDigestPreCompute_free(
 	currAdapterPtr->addrsPreCompute = NULL;
 }
 
+#endif
 static void
 mtk_hashDigests_get(
 	ipsecEip93Adapter_t *currAdapterPtr
@@ -311,8 +313,23 @@ mtk_preComputeIn_cmdDescp_set(
 	saState_t *saState;
 	dma_addr_t	saPhyAddr, statePhyAddr;
 	int errVal;
+#if defined (CONFIG_HWCRYPTO_MEMPOOL)	
+	addrsPreCompute->saHandler.addr = addrsPreCompute->RecPoolHandler.addr + SA_OFFSET;
+	addrsPreCompute->saHandler.phyAddr = addrsPreCompute->RecPoolHandler.phyAddr + SA_OFFSET;
+	addrsPreCompute->stateHandler.addr = addrsPreCompute->RecPoolHandler.addr + STATE_OFFSET;
+	addrsPreCompute->stateHandler.phyAddr = addrsPreCompute->RecPoolHandler.phyAddr + STATE_OFFSET;
+	addrsPreCompute->ipadHandler.addr = addrsPreCompute->RecPoolHandler.addr + IPAD_OFFSET;
+	addrsPreCompute->ipadHandler.phyAddr =  addrsPreCompute->RecPoolHandler.phyAddr + IPAD_OFFSET;
 
+	cmdHandler = addrsPreCompute->cmdHandler;
+	saRecord = addrsPreCompute->saHandler.addr;
+	saPhyAddr = addrsPreCompute->saHandler.phyAddr;
+	saState = addrsPreCompute->stateHandler.addr;
+	statePhyAddr = addrsPreCompute->stateHandler.phyAddr;	
 
+	memset(saRecord, 0, sizeof(saRecord_t));
+	memset(saState, 0, sizeof(saState_t));
+#else
 	cmdHandler = (eip93DescpHandler_t *) kzalloc(sizeof(eip93DescpHandler_t), GFP_KERNEL);
 	if (unlikely(cmdHandler == NULL))
 	{
@@ -344,6 +361,7 @@ mtk_preComputeIn_cmdDescp_set(
 	addrsPreCompute->stateHandler.phyAddr = statePhyAddr;
 
 
+#endif
 	saRecord->saCmd0.bits.opCode = 0x3; //basic hash operation
 	saRecord->saCmd0.bits.hashSource = 0x3; //no load HASH_SOURCE
 	saRecord->saCmd0.bits.saveHash = 0x1;
@@ -381,12 +399,14 @@ mtk_preComputeIn_cmdDescp_set(
 	return 1;
 
 
+#if !defined (CONFIG_HWCRYPTO_MEMPOOL)	
 free_saRecord:
 	dma_free_coherent(NULL, sizeof(saRecord_t), saRecord, saPhyAddr);
 free_cmdHandler:
 	kfree(cmdHandler);
 
 	return errVal;
+#endif
 }
 
 static int
@@ -400,8 +420,17 @@ mtk_preComputeOut_cmdDescp_set(
 	dma_addr_t	statePhyAddr2;
 	int errVal;
 	eip93DescpHandler_t *cmdHandler = addrsPreCompute->cmdHandler;
+#if defined (CONFIG_HWCRYPTO_MEMPOOL)	
+	addrsPreCompute->stateHandler2.addr = addrsPreCompute->RecPoolHandler.addr + STATE2_OFFSET;
+	addrsPreCompute->stateHandler2.phyAddr = addrsPreCompute->RecPoolHandler.phyAddr + STATE2_OFFSET;
+	addrsPreCompute->opadHandler.addr = addrsPreCompute->RecPoolHandler.addr + OPAD_OFFSET;
+	addrsPreCompute->opadHandler.phyAddr =  addrsPreCompute->RecPoolHandler.phyAddr + OPAD_OFFSET;
 
+	saState2 = addrsPreCompute->stateHandler2.addr;
+	statePhyAddr2 = addrsPreCompute->stateHandler2.phyAddr;	
 
+	memset(saState2, 0, sizeof(saState_t));
+#else
 	saState2 = (saState_t *) dma_alloc_coherent(NULL, sizeof(saState_t), &statePhyAddr2, GFP_KERNEL);
 	if (unlikely(saState2 == NULL))
 	{
@@ -413,6 +442,7 @@ mtk_preComputeOut_cmdDescp_set(
 	addrsPreCompute->stateHandler2.addr = (unsigned int)saState2;
 	addrsPreCompute->stateHandler2.phyAddr = statePhyAddr2;
 
+#endif
 
 	cmdHandler->srcAddr.phyAddr = addrsPreCompute->opadHandler.phyAddr;
 	cmdHandler->stateAddr.phyAddr = statePhyAddr2;
@@ -420,12 +450,14 @@ mtk_preComputeOut_cmdDescp_set(
 	return 1;
 
 
+#if !defined (CONFIG_HWCRYPTO_MEMPOOL)	
 free_preComputeIn:
 	dma_free_coherent(NULL, sizeof(saState_t), (saState_t *)addrsPreCompute->stateHandler.addr, addrsPreCompute->stateHandler.phyAddr);
 	dma_free_coherent(NULL, sizeof(saRecord_t), (saRecord_t *)addrsPreCompute->saHandler.addr, addrsPreCompute->saHandler.phyAddr);
 	kfree(addrsPreCompute->cmdHandler);
 
 	return errVal;
+#endif
 }
 
 static int
@@ -450,8 +482,24 @@ mtk_cmdHandler_cmdDescp_set(
 	dma_addr_t saPhyAddr, statePhyAddr;
 	int errVal;
 	unsigned int keyWord, i;
+#if defined (CONFIG_HWCRYPTO_MEMPOOL)	
+	cmdHandler = currAdapterPtr->cmdHandler;
 
+	cmdHandler->stateAddr.addr = cmdHandler->saAddr.addr + SAPOOL_STATE_OFFSET;
+	cmdHandler->stateAddr.phyAddr = cmdHandler->saAddr.phyAddr + SAPOOL_STATE_OFFSET;
+	cmdHandler->arc4Addr.addr = cmdHandler->saAddr.addr + SAPOOL_ARC4STATE_OFFSET;
+	cmdHandler->arc4Addr.phyAddr = cmdHandler->saAddr.phyAddr + SAPOOL_ARC4STATE_OFFSET;
 
+	saRecord = cmdHandler->saAddr.addr;
+	saPhyAddr = cmdHandler->saAddr.phyAddr;
+	saState = cmdHandler->stateAddr.addr;
+	statePhyAddr = cmdHandler->stateAddr.phyAddr;
+	saState = cmdHandler->arc4Addr.addr;
+	statePhyAddr = cmdHandler->arc4Addr.phyAddr; 
+
+	memset(saRecord, 0, sizeof(saRecord_t));
+	memset(saState, 0, sizeof(saState_t));
+#else
 	cmdHandler = (eip93DescpHandler_t *) kzalloc(sizeof(eip93DescpHandler_t), GFP_KERNEL);
 	if (unlikely(cmdHandler == NULL))
 	{
@@ -477,6 +525,7 @@ mtk_cmdHandler_cmdDescp_set(
 	}
 	memset(saState, 0, sizeof(saState_t));
 
+#endif	
 
 	/* prepare SA */
 
@@ -528,25 +577,31 @@ mtk_cmdHandler_cmdDescp_set(
 	cmdHandler->peCrtlStat.bits.hashFinal = 0x1;
 	cmdHandler->peCrtlStat.bits.padCrtlStat = padCrtlStat; //pad boundary
 
+#if !defined (CONFIG_HWCRYPTO_MEMPOOL)
 	cmdHandler->saAddr.addr = (unsigned int)saRecord;
 	cmdHandler->saAddr.phyAddr = saPhyAddr;
 	cmdHandler->stateAddr.addr = (unsigned int)saState;
 	cmdHandler->stateAddr.phyAddr = statePhyAddr;
 	cmdHandler->arc4Addr.addr = (unsigned int)saState;
 	cmdHandler->arc4Addr.phyAddr = statePhyAddr;
+#endif
 	cmdHandler->peLength.bits.hostReady = 0x1;
 	cmdHandler->peCrtlStat.bits.peReady = 0;
 
+#if !defined (CONFIG_HWCRYPTO_MEMPOOL)
 	/* restore cmdHandler for later use */
 	currAdapterPtr->cmdHandler = cmdHandler;
+#endif	
 	return 1;
 
 
+#if !defined (CONFIG_HWCRYPTO_MEMPOOL)	
 free_saRecord:
 	dma_free_coherent(NULL, sizeof(saRecord_t), saRecord, saPhyAddr);
 free_cmdHandler:
 	kfree(cmdHandler);
 	return errVal;
+#endif
 }
 
 /*_______________________________________________________________________
@@ -582,14 +637,18 @@ mtk_packet_put(
 	u32* pData = NULL;
 	dma_addr_t pDataPhy;
 
-	//spin_lock_irqsave(&putlock, flags);
 
 	if(cmdRingIdx == EIP93_RING_SIZE)
 	{
 		cmdRingIdx = 0;
 	}
+	if(resPrepRingIdx == EIP93_RING_SIZE)
+	{
+		resPrepRingIdx = 0;
+	}
 	pCrd += (cmdRingIdx << 3); //cmdRingIdx*8 (a cmdDescp has 8 words!)
 	cmdRingIdx++;
+	resPrepRingIdx++;
 
 	pCrd[3] = cmdDescp->saAddr.phyAddr;
 	pCrd[4] = cmdDescp->stateAddr.phyAddr;
@@ -601,6 +660,9 @@ mtk_packet_put(
 		currAdapterPtr = (ipsecEip93Adapter_t *)(*addrCurrAdapter);
 		addedLen = currAdapterPtr->addedLen;
 
+spin_lock(&currAdapterPtr->lock);
+		currAdapterPtr->packet_count++;
+spin_unlock(&currAdapterPtr->lock);
 		dma_cache_wback_inv((unsigned long)(skb->data), (skb->len + addedLen) & (BIT_20 - 1));
 
 #if defined (BUFFER_MEMCPY)
@@ -676,7 +738,6 @@ mtk_packet_put(
 	wmb();
 	iowrite32(1, pEip93RegBase + (PE_CD_COUNT >> 2)); //PE_CD_COUNT/4
 
-	//spin_unlock_irqrestore(&putlock, flags);
 
 	return 0; //success
 }
@@ -715,13 +776,11 @@ mtk_packet_get(
 	ipsecEip93Adapter_t *currAdapterPtr;
 	unsigned int *addrCurrAdapter;
 
-	spin_lock_irqsave(&getlock, flags);
 	PktCnt = ioread32(pEip93RegBase + (PE_RD_COUNT >> 2)) & (BIT_10 - 1); //PE_RD_COUNT/4
 
 	//don't wait for Crypto Engine in order to speed up!
 	if(PktCnt == 0)
 	{
-		spin_unlock_irqrestore(&getlock, flags);
 		return 0; //no result yet
 	}
 
@@ -752,9 +811,12 @@ mtk_packet_get(
 				skb = (struct sk_buff *)resDescp->userId;
 				addrCurrAdapter = (unsigned int *) &(skb->cb[36]);
 				currAdapterPtr = (ipsecEip93Adapter_t *)(*addrCurrAdapter);
-				printk("\n\n !PE Ring[%d] ErrCode=0x%x! status=%x rdn=%d cdn=%d encrypt=%d qlen=%d\n\n", resRingIdx, err_sts, ioread32(pEip93RegBase + (PE_CTRL_STAT >> 2)), PktCnt,\
-						cmdPktCnt,currAdapterPtr->isEncryptOrDecrypt, currAdapterPtr->skbQueue.qlen);
+				printk("\n\n !PE Ring[%d] ErrCode=0x%x! status=%x rdn=%d cdn=%d encrypt=%d spi=%x index=%d qlen=%d\n\n", resRingIdx, err_sts, ioread32(pEip93RegBase + (PE_CTRL_STAT >> 2)), PktCnt,\
+						cmdPktCnt,currAdapterPtr->isEncryptOrDecrypt, currAdapterPtr->spi,currAdapterPtr->idx,currAdapterPtr->skbQueue.qlen);
 				//for encryption/decryption case
+				spin_lock(&currAdapterPtr->lock);
+				currAdapterPtr->packet_count--;	
+				spin_unlock(&currAdapterPtr->lock);
 				//if (resDescp->peCrtlStat.bits.hashFinal == 0x1)
 				{
 #if defined (MCRYPTO_DBG)
@@ -803,11 +865,14 @@ mtk_packet_get(
 				break;
 			}
 			skb = (struct sk_buff *)resDescp->userId;
-#if defined (BUFFER_MEMCPY)
 			if((skb!=NULL)&&(resDescp->peCrtlStat.bits.hashFinal == 0x1))
 			{
 				addrCurrAdapter = (unsigned int *) &(skb->cb[36]);
 				currAdapterPtr = (ipsecEip93Adapter_t *)(*addrCurrAdapter);
+				spin_lock(&currAdapterPtr->lock);
+				currAdapterPtr->packet_count--;	
+				spin_unlock(&currAdapterPtr->lock);
+#if defined (BUFFER_MEMCPY)
 				if (pRrd[2]!=pRrd[1])
 				{
 #if defined (SKB_HEAD_SHIFT)
@@ -822,9 +887,9 @@ mtk_packet_get(
 					kfree(pData);
 #endif
 				}
-
-			}
 #endif
+			}
+
 			retVal = 1;
 			break;
 		}
@@ -843,6 +908,9 @@ mtk_packet_get(
 #if defined (BUFFER_MEMCPY)
 						addrCurrAdapter = (unsigned int *) &(skb->cb[36]);
 						currAdapterPtr = (ipsecEip93Adapter_t *)(*addrCurrAdapter);
+						spin_lock(&currAdapterPtr->lock);
+						currAdapterPtr->packet_count--;	
+						spin_unlock(&currAdapterPtr->lock);
 						if (pRrd[2]!=pRrd[1])
 						{
 							int offset, alloc_size;
@@ -872,9 +940,13 @@ mtk_packet_get(
 	pRrd[0] = 0;
 
 	wmb();
+	if(cmdRingFrontIdx == EIP93_RING_SIZE)
+	{
+		cmdRingFrontIdx = 0;
+	}
+	cmdRingFrontIdx++;
 	resRingIdx++;
 	iowrite32(1, pEip93RegBase + (PE_RD_COUNT >> 2)); //PE_RD_COUNT/4
-	spin_unlock_irqrestore(&getlock, flags);
 	return retVal;
 }
 
@@ -884,10 +956,19 @@ mtk_eip93CmdResCnt_check(
 	unsigned int rdx	
 )
 {
-	return (
-		((ioread32(pEip93RegBase + (PE_CD_COUNT >> 2)) & (BIT_10 - 1)) < EIP93_RING_SIZE) &&
-		((ioread32(pEip93RegBase + (PE_RD_COUNT >> 2)) & (BIT_10 - 1)) < (EIP93_RING_SIZE - EIP93_RING_BUFFER))
-	);
+	unsigned int ret;
+	int diff,diff2;
+
+	if (cmdRingFrontIdx > cmdRingIdx)
+		diff = (cmdRingFrontIdx-cmdRingIdx);
+	else
+		diff = EIP93_RING_SIZE - (cmdRingIdx-cmdRingFrontIdx);
+	if (resRingIdx > resPrepRingIdx )
+		diff2 = (resRingIdx-resPrepRingIdx);
+	else
+		diff2 = EIP93_RING_SIZE - (resPrepRingIdx-resRingIdx);
+	
+	return ((diff >= (2)) && (diff2 >= (2)) );
 }
 
 
@@ -913,8 +994,8 @@ mtk_ipsec_init(
 {
 	DMAAlign = 4;//dma_get_cache_alignment();
 	printk("== IPSEC Crypto Engine Driver : %s %s ==\n",__DATE__,__TIME__);
-	spin_lock_init(&putlock);
-	spin_lock_init(&getlock);
+	//spin_lock_init(&putlock);
+	//spin_lock_init(&getlock);
 	write_c0_config7((read_c0_config7()|(1<<8)));
 
 	ipsec_eip93_adapters_init();
@@ -932,8 +1013,10 @@ mtk_ipsec_init(
 	ipsec_pktLength_get = mtk_pktLength_get;
 	ipsec_eip93HashFinal_get = mtk_eip93HashFinal_get;
 	ipsec_eip93UserId_get = mtk_eip93UserId_get;
+#if !defined (CONFIG_HWCRYPTO_MEMPOOL)
 	ipsec_addrsDigestPreCompute_free = mtk_addrsDigestPreCompute_free;
 	ipsec_cmdHandler_free = mtk_cmdHandler_free;
+#endif
 	ipsec_hashDigests_get = mtk_hashDigests_get;
 	ipsec_hashDigests_set = mtk_hashDigests_set;
 
@@ -942,6 +1025,10 @@ mtk_ipsec_init(
 	//eip93 info init
 	cmdRingIdx = ioread32(pEip93RegBase + (PE_RING_PNTR >> 2)) & (BIT_10-1);
 	resRingIdx = (ioread32(pEip93RegBase + (PE_RING_PNTR >> 2)) >>16) & (BIT_10-1);
+	cmdRingFrontIdx = cmdRingIdx;
+	resPrepRingIdx = resRingIdx;
+	printk("-- cmdRingFrontIdx=%d cmdRingIdx=%d --\n",cmdRingFrontIdx,cmdRingIdx);
+	printk("-- resPrepRingIdx=%d resRingIdx=%d --\n",resPrepRingIdx,resRingIdx);
 #ifdef WORKQUEUE_BH
 	INIT_WORK(&mtk_interrupt_BH_result_wq, mtk_BH_handler_resultGet);
 #else

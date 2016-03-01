@@ -40,7 +40,7 @@
 #include <linux/socket.h>
 #include <linux/genalloc.h>
 
-#define MAX_PAGES_PER_RECVFILE  32
+#define MAX_PAGES_PER_RECVFILE  16
 
 spinlock_t michael_lock;
 struct common_mempool;
@@ -1835,6 +1835,21 @@ cleanup:
 
 	goto done;
 }
+static int __init init_splice_pools(void)
+{
+	unsigned int rcv_pool_size= sizeof(struct recvfile_ctl_blk) * MAX_PAGES_PER_RECVFILE;
+	unsigned int kve_pool_size= sizeof(struct kvec) * MAX_PAGES_PER_RECVFILE;
+
+	rcv_pool =  common_mempool_create((8 * num_possible_cpus()), rcv_pool_size);
+	kvec_pool = common_mempool_create((8 * num_possible_cpus()), kve_pool_size);
+	if (!rcv_pool || !kvec_pool)
+		return -ENOMEM;
+
+	//printk(KERN_ERR "%s rcv %p (sz:%d) kvec %p (sz:%d) per %d core\n",
+		//__FUNCTION__, rcv_pool, rcv_pool_size, kvec_pool, kve_pool_size, num_possible_cpus());
+}
+
+fs_initcall(init_splice_pools);
 #endif
 
 /*
@@ -2162,13 +2177,45 @@ SYSCALL_DEFINE6(splice, int, fd_in, loff_t __user *, off_in,
 		int, fd_out, loff_t __user *, off_out,
 		size_t, len, unsigned int, flags)
 {
+#if defined (CONFIG_SPLICE_NET_SUPPORT)
+	struct file *in, *out;
+	int fput_in, fput_out;
+	struct socket *sock = NULL;
+#else
 	struct fd in, out;
+#endif
 	long error;
 
 	if (unlikely(!len))
 		return 0;
 
 	error = -EBADF;
+#if defined (CONFIG_SPLICE_NET_SUPPORT)
+	 /* check if fd_in is a socket */
+	sock = sockfd_lookup(fd_in, &error);
+	if (sock) {
+		out = NULL;
+		if (!sock->sk)
+			goto done;
+		out = fget_light(fd_out, &fput_out);
+
+		if (out) {
+			if (!(out->f_mode & FMODE_WRITE))
+				goto done;
+			if (!out->f_op->splice_from_socket) {
+				goto done;
+			}
+			error = out->f_op->splice_from_socket(out, sock, off_out, len);
+		}
+done:
+                if (out)
+                        fput_light(out, fput_out);
+                fput(sock->file);
+
+                return error;
+        }
+
+#else
 	in = fdget(fd_in);
 	if (in.file) {
 		if (in.file->f_mode & FMODE_READ) {
@@ -2183,6 +2230,7 @@ SYSCALL_DEFINE6(splice, int, fd_in, loff_t __user *, off_in,
 		}
 		fdput(in);
 	}
+#endif
 	return error;
 }
 

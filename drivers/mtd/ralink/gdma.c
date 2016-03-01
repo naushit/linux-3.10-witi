@@ -19,6 +19,7 @@ int _nand_dma_sync(void)
 {	
 	//unmask to start dma
 	unsigned long data;
+	int retry = 1000000; //fixme
 
 	data = GDMA_READ_REG(GDMA_CTRL_REG1(DMA_CHNUM));
 	data &= ~( 0x01 << CH_MASK_OFFSET); 

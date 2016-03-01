@@ -136,6 +136,10 @@ int is_nand_page_2048 = 0;
 const unsigned int nand_size_map[2][3] = {{25, 30, 30}, {20, 27, 30}};
 
 #if defined (CONFIG_SUPPORT_OPENWRT)
+int OpenWRT_rootfs_upgrading = 0;
+int OpenWRT_force_skip_bad_block = 1;
+unsigned int rootfs_data_offset = 0;
+unsigned int rootfs_offset = 0;
 static struct mtd_partition rt2880_partitions[] = {
 	{
 				name:		   "ALL",
@@ -1592,6 +1596,16 @@ int nand_erase_nand(struct ra_nand_chip *ra, struct erase_info *instr)
 
 #ifdef SKIP_BAD_BLOCK
 		do {
+#if defined (CONFIG_SUPPORT_OPENWRT)
+			if (((page << ra->page_shift) >= (int)rootfs_offset) && ((page << ra->page_shift) < (int)rootfs_data_offset))
+			{
+				if (!OpenWRT_rootfs_upgrading)
+				{
+					OpenWRT_rootfs_upgrading = 1;
+					printk("OpenWRT_rootfs_upgrading = 1\n");
+				}
+			}
+#endif
 			int newpage = page_remap(ra, page);
 
 			if (newpage < 0)
@@ -2805,10 +2819,22 @@ static int ramtd_nand_read(struct mtd_info *mtd, loff_t from, size_t len,
 	ops.oobbuf = NULL;
 	ops.mode =  MTD_OOB_AUTO;
 
+#if defined(CONFIG_SUPPORT_OPENWRT)
+	if ( (from & 0x1ff) == (rootfs_offset & 0x1ff) && !OpenWRT_rootfs_upgrading)
+	{
+		OpenWRT_force_skip_bad_block = 1;
+	}
+#endif
 	ret = nand_do_read_ops(ra, from, &ops);
 
 	*retlen = ops.retlen;
 
+#if defined(CONFIG_SUPPORT_OPENWRT)
+	if ( (from & 0x1ff) == (rootfs_offset & 0x1ff) )
+	{
+		OpenWRT_force_skip_bad_block = 0;
+	}
+#endif
 	nand_release_device(ra);
 
 	return ret;
@@ -3137,10 +3163,17 @@ static int page_remap(struct ra_nand_chip *ra, int page)
 		for (i = 1; i < mtd_part_no; i++)
 		{
 			end_blk = start_blk + (rt2880_partitions[i].size >> ra->erase_shift) - 1;
-			//printk("end_blk = %x, start_blk = %x, %x\n", end_blk, start_blk, page >> CONFIG_NUMPAGE_PER_BLOCK_BIT);
+#if defined (CONFIG_SUPPORT_OPENWRT)
+			if (start_blk > end_blk)
+			{
+				end_blk = (rootfs_data_offset >> ra->erase_shift) - 1;
+				start_blk = rootfs_offset >> ra->erase_shift;
+			}
+#endif
 			if (((page >> CONFIG_NUMPAGE_PER_BLOCK_BIT) >= start_blk) && ((page >> CONFIG_NUMPAGE_PER_BLOCK_BIT) <= end_blk))
 			{
 				//printk("page = %x at mtd%d\n", page, i);
+#if !defined (CONFIG_SUPPORT_OPENWRT)
 #ifdef  CONFIG_RT2880_ROOTFS_IN_FLASH
 				if (i == (NAND_MTD_ROOTFS_PARTITION_NO - 1))
 					end_blk += (rt2880_partitions[i+1].size >> ra->erase_shift);
@@ -3148,6 +3181,7 @@ static int page_remap(struct ra_nand_chip *ra, int page)
 					start_blk -= (rt2880_partitions[i-1].size >> ra->erase_shift);
 #endif
 				
+#endif				
 				page_in_block = page & ((1 << CONFIG_NUMPAGE_PER_BLOCK_BIT) - 1);
 				block_offset = (page >> CONFIG_NUMPAGE_PER_BLOCK_BIT) - start_blk;
 				
@@ -3183,6 +3217,12 @@ static int page_remap(struct ra_nand_chip *ra, int page)
 
 static int is_skip_bad_block(struct ra_nand_chip *ra, int page)
 {
+#if defined (CONFIG_SUPPORT_OPENWRT)
+	if (OpenWRT_force_skip_bad_block)
+		return 1;
+	else
+		return 0;
+#endif
 #ifdef NAND_FS_SUPPORT
 	if ((page << ra->page_shift) >= FILE_SYSTEM_START_ADDRESS)
 		return 0;
@@ -3447,6 +3487,11 @@ static int __init ra_nand_init(void)
 #endif
 	/* Register the partitions */
 	add_mtd_partitions(ranfc_mtd, rt2880_partitions, ARRAY_SIZE(rt2880_partitions));
+#if defined (CONFIG_SUPPORT_OPENWRT)
+	// Fine the start address of rootfs_data
+	printk("rootfs_data_offset = %x\n", rootfs_data_offset);
+	printk("rootfs_offset = %x\n", rootfs_offset);
+#endif
 
 	return 0;
 #else

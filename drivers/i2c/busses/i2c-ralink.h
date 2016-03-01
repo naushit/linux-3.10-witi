@@ -22,11 +22,17 @@
 #define RT2880_I2C_STATUS_REG           (RT2880_I2C_REG_BASE+0x18)
 #define RT2880_I2C_STARTXFR_REG         (RT2880_I2C_REG_BASE+0x1C)
 #define RT2880_I2C_BYTECNT_REG          (RT2880_I2C_REG_BASE+0x20)
+#define RT2880_I2C_SM0_IS_AUTOMODE      (RT2880_I2C_REG_BASE+0x28)
+#define RT2880_I2C_SM0CTL0              (RT2880_I2C_REG_BASE+0x40)
 
 /* I2C_CFG register bit field */
 #define I2C_CFG_DEVADLEN_7              (6<<2)  /* 7 bits */
 #define I2C_CFG_ADDRDIS                 (1<<1)  /* disable address transmission*/
 #define I2C_CFG_DEVADDIS                (1<<0)  /* disable evice address transmission */
+#define I2C_CTL0_ODRAIN			(1<<31) // the output is pulled hight by SIF master 0
+#define I2C_CTL0_VSYNC_MODE		(1<<28) // allow triggered in VSYNC pulse
+#define I2C_CTL0_SM0_WAIT_LEVEL		(1<<6) // output H when SIF master 0 is in WAIT state
+#define I2C_CTL0_SM0_EN			(1<<1) // Enable SIF master 0
 
 #define I2C_CFG_DEFAULT			(I2C_CFG_ADDRDIS | I2C_CFG_DEVADLEN_7)
 #define CLKDIV_VALUE			333

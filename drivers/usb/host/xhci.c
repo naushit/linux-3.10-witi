@@ -4931,13 +4931,7 @@ MODULE_AUTHOR(DRIVER_AUTHOR);
 MODULE_LICENSE("GPL");
 
 #if defined (CONFIG_USB_MT7621_XHCI_PLATFORM)
-static struct platform_device xhci_platform_dev = {
-	.name = "xhci-hcd",
-	.id   = -1,
-	.dev  = { 
-		.coherent_dma_mask = 0xffffffff,
-	},
-};
+static struct platform_device *xhci_platform_dev;
 #endif
 
 static int __init xhci_hcd_init(void)
@@ -4966,14 +4960,14 @@ static int __init xhci_hcd_init(void)
 		printk(KERN_ERR "WARN: PHY doesn't implement u2 slew rate calibration function\n");
 	}
 	u3phy_ops->init(u3phy);
-	pPlatformDev = &xhci_platform_dev;
-	memset(pPlatformDev, 0, sizeof(struct platform_device));
-	pPlatformDev->name = "xhci-hcd";
-	pPlatformDev->id = -1;
+
+	xhci_platform_dev = platform_device_alloc("xhci-hcd", -1);
+	pPlatformDev = xhci_platform_dev;
 	pPlatformDev->dev.coherent_dma_mask = 0xffffffff;
 	pPlatformDev->dev.dma_mask = &pPlatformDev->dev.coherent_dma_mask;
 
-	retval = platform_device_register(&xhci_platform_dev);
+	//retval = platform_device_register(pPlatformDev);
+	retval = platform_device_add(pPlatformDev);
 	if (retval < 0)
 		xhci_unregister_plat();
 #endif
@@ -5010,6 +5004,9 @@ module_init(xhci_hcd_init);
 static void __exit xhci_hcd_cleanup(void)
 {
 	xhci_unregister_pci();
+#if defined (CONFIG_USB_MT7621_XHCI_PLATFORM)
+	platform_device_unregister(xhci_platform_dev);
+#endif
 	xhci_unregister_plat();
 }
 module_exit(xhci_hcd_cleanup);

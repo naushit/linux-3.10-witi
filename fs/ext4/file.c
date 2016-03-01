@@ -640,6 +640,9 @@ const struct file_operations ext4_file_operations = {
 	.splice_read	= generic_file_splice_read,
 	.splice_write	= generic_file_splice_write,
 	.fallocate	= ext4_fallocate,
+#if defined(CONFIG_SPLICE_NET_SUPPORT)
+	.splice_from_socket = generic_splice_from_socket,
+#endif
 };
 
 const struct inode_operations ext4_file_inode_operations = {

@@ -23,7 +23,7 @@ config NETFILTER_RALINK_SWQOS_SUPPORT
          If unsure, say N.
 
 config NF_SHORTCUT_HOOK
-	bool
+	bool "Netfilter Shortcut"
 	default n
 
 config NETFILTER_NETLINK

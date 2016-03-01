@@ -53,6 +53,7 @@ struct mtd_part {
 };
 
 #if defined(CONFIG_SUPPORT_OPENWRT)
+static int bad_detected;
 static void mtd_partition_split(struct mtd_info *master, struct mtd_part *part);
 #endif
 
@@ -846,6 +847,36 @@ mtd_pad_erasesize(struct mtd_info *mtd, int offset, int len)
 	len += offset & mask;
 	len = (len + mask) & ~mask;
 	len -= offset & mask;
+	if (mtd->type & MTD_NANDFLASH)
+	{
+		unsigned char buf[16];
+		int start_offset = (offset + mask) & ~mask;
+		int rootfs_len = len & ~mask;
+		struct mtd_oob_ops ops;
+		memset(&ops, 0, sizeof(ops));
+		ops.mode = MTD_OPS_RAW;
+		ops.ooblen=1;
+		ops.oobbuf = buf;
+		
+		// the total length was reduced if there are bad block in kernel image, now add it back
+		rootfs_len += bad_detected * mtd->erasesize;
+		while(rootfs_len >= 0)
+		{
+			mtd_read_oob(mtd, start_offset, &ops);
+			if (buf[0] != (unsigned char)0xff)
+			{
+				bad_detected++;
+				printk("bad_detected= %x\n", bad_detected);
+			}
+			else
+			{
+				rootfs_len -= mtd->erasesize;
+			}
+			start_offset += mtd->erasesize;
+		}
+
+		len += bad_detected * mtd->erasesize;
+	}
 	return len;
 }
 
@@ -864,6 +895,12 @@ static int split_squashfs(struct mtd_info *master, int offset, int *split_offset
 	return 0;
 }
 
+#ifdef CONFIG_SUPPORT_OPENWRT
+#if defined(CONFIG_MTD_ANY_RALINK) || defined(CONFIG_MTK_MTD_NAND)
+extern unsigned int rootfs_data_offset;
+extern unsigned int rootfs_offset;
+#endif
+#endif
 static void split_rootfs_data(struct mtd_info *master, struct mtd_part *part)
 {
 	unsigned int split_offset = 0;
@@ -884,6 +921,11 @@ static void split_rootfs_data(struct mtd_info *master, struct mtd_part *part)
 	split_size = part->mtd.size - (split_offset - part->offset);
 	printk(KERN_INFO "mtd: partition \"%s\" created automatically, ofs=0x%x, len=0x%x\n",
 		ROOTFS_SPLIT_NAME, split_offset, split_size);
+#ifdef CONFIG_SUPPORT_OPENWRT
+#if defined(CONFIG_MTD_ANY_RALINK) || defined(CONFIG_MTK_MTD_NAND)
+	rootfs_data_offset = split_offset;
+#endif
+#endif
 
 	__mtd_add_partition(master, ROOTFS_SPLIT_NAME, split_offset,
 			    split_size, false);
@@ -904,7 +946,12 @@ static void split_uimage(struct mtd_info *master, struct mtd_part *part)
 	size_t len;
 
 	if (mtd_read(master, part->offset, sizeof(hdr), &len, (void *) &hdr))
-		return;
+	{
+		int i = master->erasesize;
+		while (mtd_read(master, part->offset + i, sizeof(hdr), &len, (void *) &hdr))
+			i+= master->erasesize;
+		//return;
+	}
 
 	if (len != sizeof(hdr) || hdr.magic != cpu_to_be32(UBOOT_MAGIC))
 		return;
@@ -914,6 +961,35 @@ static void split_uimage(struct mtd_info *master, struct mtd_part *part)
 	else
 		len = be32_to_cpu(hdr.size) + 0x40;
 
+#ifdef CONFIG_SUPPORT_OPENWRT
+#if defined(CONFIG_MTD_ANY_RALINK) || defined(CONFIG_MTK_MTD_NAND)
+	if (master->type & MTD_NANDFLASH)
+	{
+		unsigned char buf[16];
+		int i;
+		struct mtd_oob_ops ops;
+		memset(&ops, 0, sizeof(ops));
+		ops.mode = MTD_OPS_RAW;
+		ops.ooblen=1;
+		ops.oobbuf = buf;
+		bad_detected = 0;
+		for (i = part->offset; i < (part->offset + len + (bad_detected * master->erasesize)); i+= master->erasesize)
+		{
+			mtd_read_oob(master, i, &ops);
+			if (buf[0] != (unsigned char)0xff)
+			{
+				bad_detected++;
+			}
+		}
+		
+		rootfs_offset = part->offset + len + bad_detected * master->erasesize;
+
+		__mtd_add_partition(master, "rootfs", part->offset + len + bad_detected * master->erasesize,
+				    part->mtd.size - len - bad_detected * master->erasesize, false);
+	}
+	else
+#endif
+#endif
 	__mtd_add_partition(master, "rootfs", part->offset + len,
 			    part->mtd.size - len, false);
 }

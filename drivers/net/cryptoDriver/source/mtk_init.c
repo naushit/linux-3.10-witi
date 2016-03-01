@@ -81,7 +81,7 @@ Adapter_UnInit(
 
     HWPAL_DMAResource_UnInit();
 }
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,36)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,14)
 static int mcrypto_proc_read(char *buf, char **start, off_t off, int count, int *eof, void *data)
 {
     int len, i;
@@ -90,12 +90,14 @@ static int mcrypto_proc_read(char *buf, char **start, off_t off, int count, int 
         return 0;
     }
 
+    for (i = 0; i < 10; i++)
+		len = sprintf(buf, "ipicpu[%d] : %d\n", i,mcrypto_proc.ipicpu[i]);
     len = sprintf(buf, "expand : %d\n", mcrypto_proc.copy_expand_count);
     len += sprintf(buf + len, "nolinear packet : %d\n", mcrypto_proc.nolinear_count);
     len += sprintf(buf + len, "oom putpacket : %d\n", mcrypto_proc.oom_in_put);
-    for (i = 0; i < 4; i++)
+    for (i = 0; i < 16; i++)
     	len += sprintf(buf + len, "skbq[%d] : %d\n", i, mcrypto_proc.qlen[i]);
-    for (i = 0; i < 10; i++)
+    for (i = 0; i < 16; i++)
     	len += sprintf(buf + len, "dbgpt[%d] : %d\n", i, mcrypto_proc.dbg_pt[i]);
     return len;
 }
@@ -107,6 +109,7 @@ VDriver_Init(
 )
 {
 
+    int i;
     if (!Adapter_Init())
     {
 		printk("\n !Adapter_Init failed! \n");
@@ -129,6 +132,8 @@ VDriver_Init(
 	entry->write_proc = NULL;
 #endif
 	memset(&mcrypto_proc, 0, sizeof(mcrypto_proc_type));
+	for (i = 0 ; i < 10 ; i++)
+  		mcrypto_proc.ipicpu[i] = -1;
 
 	mtk_ipsec_init();
 

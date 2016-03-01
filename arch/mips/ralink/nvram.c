@@ -48,11 +48,7 @@ char ra_nvram_debug = 0;
 hashTb_funcSet_t ghashTbFuncSet;
 #endif
 
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,36)
-	static DECLARE_MUTEX(nvram_sem);
-#else
-	static DEFINE_SEMAPHORE(nvram_sem);
-#endif
+static struct semaphore *nvram_sem = NULL;
 
 extern int ra_mtd_write_nm(char *name, loff_t to, size_t len, const u_char *buf);
 extern int ra_mtd_read_nm(char *name, loff_t from, size_t len, u_char *buf);
@@ -79,15 +75,15 @@ static block_t fb[FLASH_BLOCK_NUM+EXTEND_BLOCK_NUM] =
 		.valid = 0
 	},
 	{
-		.name = "cert",
+		.name = "wifi3",
 		.flash_offset = 0x8000,
 		.flash_max_len = ENV_BLK_SIZE * 2,
 		.valid = 0
 	},
 	{
-		.name = "wapi",
-		.flash_offset = 0xa000,
-		.flash_max_len = ENV_BLK_SIZE * 5,
+		.name = "cert",
+		.flash_offset = 0xe000,
+		.flash_max_len = ENV_BLK_SIZE,
 		.valid = 0
 #if defined CONFIG_EXTEND_NVRAM
 	},
@@ -96,12 +92,21 @@ static block_t fb[FLASH_BLOCK_NUM+EXTEND_BLOCK_NUM] =
 		.flash_offset = 0x0,
 		.flash_max_len = ENV_BLK_SIZE * 8,
 		.valid = 0
+#if defined CONFIG_WAPI_SUPPORT
+	},
+	{
+		.name = "wapi",
+		.flash_offset = 0x8000,
+		.flash_max_len = ENV_BLK_SIZE * 8,
+		.valid = 0
+#else
 	},
 	{
 		.name = "tr069cert",
 		.flash_offset = 0x8000,
 		.flash_max_len = ENV_BLK_SIZE * 8,
 		.valid = 0
+#endif
 #endif
 	}
 };
@@ -189,17 +194,10 @@ uint32_t nv_crc32(uint32_t crc, const char *buf, uint32_t len)
 int ralink_nvram_open(struct inode *inode, struct file *file)
 {
 	int i;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
-	MOD_INC_USE_COUNT;
-#else
-	try_module_get(THIS_MODULE);
-#endif
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,36)
-	init_MUTEX(&nvram_sem);
-#else
-  sema_init(&nvram_sem,1);  
-#endif
-	down(&nvram_sem);
+	if (down_interruptible(nvram_sem)) {
+		printk("%s(%d): get nvram_sem fail\n", __func__, __LINE__);
+		return -1;
+	}
 
 #ifdef CONFIG_CONFIG_SHRINK
 	if(!hash_funcSet_reg(&ghashTbFuncSet))
@@ -210,7 +208,7 @@ int ralink_nvram_open(struct inode *inode, struct file *file)
 		init_nvram_block(i);
 	}
 
-	up(&nvram_sem);
+	up(nvram_sem);
 	return 0;
 }
 
@@ -368,6 +366,17 @@ int ra_nvram_init(void)
 	}
 #endif
 #endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
+	MOD_INC_USE_COUNT;
+#else
+	try_module_get(THIS_MODULE);
+#endif
+	nvram_sem = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,36)
+	init_MUTEX(nvram_sem);
+#else
+	sema_init(nvram_sem,1);  
+#endif
 
 	return 0;
 }
@@ -511,7 +520,10 @@ static int ra_nvram_close(int index)
 
 	if (!fb[index].valid)
 		return 0;
-	down(&nvram_sem);
+	if (down_interruptible(nvram_sem)) {
+		printk("%s(%d): get nvram_sem fail\n", __func__, __LINE__);
+		return -1;
+	}
 
 	//free cache
 	for (i = 0; i < MAX_CACHE_ENTRY; i++) {
@@ -525,7 +537,7 @@ static int ra_nvram_close(int index)
 		}
 	}
 	
-	up(&nvram_sem);
+	up(nvram_sem);
 	return 0;
 }
 /*
@@ -559,7 +571,10 @@ int nvram_clear(int index)
 	RANV_PRINT("--> nvram_clear %d\n", index);
 	RANV_CHECK_INDEX(-1);
 
-	down(&nvram_sem);
+	if (down_interruptible(nvram_sem)) {
+		printk("%s(%d): get nvram_sem fail\n", __func__, __LINE__);
+		return -1;
+	}
 
 	//construct all 1s env block
 	len = fb[index].flash_max_len - sizeof(fb[index].env.crc);
@@ -572,7 +587,7 @@ int nvram_clear(int index)
 	if (!fb[index].env.data) {
 		fb[index].env.data = (char *)kmalloc(envDataLen, GFP_KERNEL);
 		if (!fb[index].env.data) {
-			up(&nvram_sem);
+			up(nvram_sem);
 			return -ENOMEM;
 		}
 	}
@@ -584,7 +599,6 @@ int nvram_clear(int index)
 
 	//calculate crc
 	fb[index].env.crc = (unsigned long)nv_crc32(0, (unsigned char *)fb[index].env.data, len);
-	up(&nvram_sem);
 
         //write crc to flash
 	to = fb[index].flash_offset;
@@ -608,6 +622,7 @@ int nvram_clear(int index)
 
 	RANV_PRINT("clear flash from 0x%x for 0x%x bytes\n", (unsigned int)to, len);
 	fb[index].dirty = 0;
+	up(nvram_sem);
 
 #ifdef CONFIG_CONFIG_SHRINK
 	if(ret)
@@ -627,14 +642,17 @@ int nvram_commit(int index)
 
 	RANV_CHECK_INDEX(-1);
 
-	down(&nvram_sem);
+	if (down_interruptible(nvram_sem)) {
+		printk("%s(%d): get nvram_sem fail\n", __func__, __LINE__);
+		return -1;
+	}
 	RANV_CHECK_VALID();
 
 	counter++;
 
 	if (!fb[index].dirty) {
 		RANV_PRINT("nothing to be committed\n");
-		up(&nvram_sem);
+		up(nvram_sem);
 		return 0;
 	}
 
@@ -649,7 +667,7 @@ int nvram_commit(int index)
 	if (!fb[index].env.data) {
 		fb[index].env.data = (char *)kmalloc(envDataLen, GFP_KERNEL);
 		if (!fb[index].env.data) {
-			up(&nvram_sem);
+			up(nvram_sem);
 			return -ENOMEM;
 		}
 	}
@@ -668,7 +686,7 @@ int nvram_commit(int index)
 		l = strlen(fb[index].cache[i].name) + strlen(fb[index].cache[i].value) + 2;
 		if (p - fb[index].env.data + 2 >= envDataLen) {
 			RANV_ERROR("ENV_BLK_SIZE 0x%x is not enough!", ENV_BLK_SIZE);
-			up(&nvram_sem);
+			up(nvram_sem);
 			return -1;
 		}
 		snprintf(p, l, "%s=%s", fb[index].cache[i].name, fb[index].cache[i].value);
@@ -679,7 +697,6 @@ int nvram_commit(int index)
 
 	//calculate crc
 	fb[index].env.crc = (unsigned long)nv_crc32(0, (unsigned char *)fb[index].env.data, len);
-	up(&nvram_sem);
 
 	//write crc to flash
 	to = fb[index].flash_offset;
@@ -703,6 +720,7 @@ int nvram_commit(int index)
 
 	fb[index].dirty = 0;
 
+	up(nvram_sem);
 
 	return 0;
 }
@@ -717,7 +735,10 @@ int nvram_set(int index, char *name, char *value)
 
 	RANV_CHECK_INDEX(-1);
 	
-	down(&nvram_sem);
+	if (down_interruptible(nvram_sem)) {
+		printk("%s(%d): get nvram_sem fail\n", __func__, __LINE__);
+		return -1;
+	}
 	RANV_CHECK_VALID();
 
 	counter++;
@@ -741,7 +762,7 @@ int nvram_set(int index, char *name, char *value)
 		//no any empty room
 		if (idx == MAX_CACHE_ENTRY) {
 			RANV_ERROR("run out of env cache, please increase MAX_CACHE_ENTRY\n");
-			up(&nvram_sem);
+			up(nvram_sem);
 			return -1;
 		}
 		fb[index].cache[idx].name = kstrdup(name, GFP_KERNEL);
@@ -757,7 +778,7 @@ int nvram_set(int index, char *name, char *value)
 	}
 #endif
 	fb[index].dirty = 1;
-	up(&nvram_sem);
+	up(nvram_sem);
 
 	return 0;
 }
@@ -772,14 +793,17 @@ char const *nvram_get(int index, char *name)
 
 	RANV_CHECK_INDEX(NULL);
 
-	down(&nvram_sem);
+	if (down_interruptible(nvram_sem)) {
+		printk("%s(%d): get nvram_sem fail\n", __func__, __LINE__);
+		return NULL;
+	}
 	RANV_CHECK_VALID();
 
 	counter++;
 #ifdef CONFIG_CONFIG_SHRINK
 	if(CONFIGFB_MATCH(index)){
 		if((ret = ghashTbFuncSet.conf_get(name))!= NULL){
-			up(&nvram_sem);
+			up(nvram_sem);
 			return ret;
 		}
 	}
@@ -792,7 +816,7 @@ char const *nvram_get(int index, char *name)
 			//duplicate the value in case caller modify it
 			//ret = strdup(fb[index].cache[idx].value);
 			ret = fb[index].cache[idx].value;
-			up(&nvram_sem);
+			up(nvram_sem);
 			return ret;
 		}
 	}
@@ -803,7 +827,7 @@ char const *nvram_get(int index, char *name)
 	//no default value set?
 	//btw, we don't return NULL anymore!
 
-	up(&nvram_sem);
+	up(nvram_sem);
 
 	return NULL;
 }
@@ -815,7 +839,10 @@ int nvram_getall(int index, char *buf)
 
 	RANV_CHECK_INDEX(-1);
 	
-	down(&nvram_sem);
+	if (down_interruptible(nvram_sem)) {
+		printk("%s(%d): get nvram_sem fail\n", __func__, __LINE__);
+		return -1;
+	}
 	RANV_CHECK_VALID();
 
 
@@ -827,7 +854,7 @@ int nvram_getall(int index, char *buf)
 	if (!fb[index].env.data) {
 		fb[index].env.data = (char *)kmalloc(len, GFP_KERNEL);
 		if (!fb[index].env.data) {
-			up(&nvram_sem);
+			up(nvram_sem);
 			return -ENOMEM;
 		}
 	}
@@ -846,7 +873,7 @@ int nvram_getall(int index, char *buf)
 		l = strlen(fb[index].cache[i].name) + strlen(fb[index].cache[i].value) + 2;
 		if (p - fb[index].env.data + 2 >= len) {
 			RANV_ERROR("ENV_BLK_SIZE 0x%x is not enough!", ENV_BLK_SIZE);
-			up(&nvram_sem);
+			up(nvram_sem);
 			return -1;
 		}
 		ret = snprintf(p, l, "%s=%s", fb[index].cache[i].name, fb[index].cache[i].value);
@@ -855,7 +882,7 @@ int nvram_getall(int index, char *buf)
 	}
 	*p = '\0'; //ending null
 
-	up(&nvram_sem);
+	up(nvram_sem);
 	
 	return 0;
 }

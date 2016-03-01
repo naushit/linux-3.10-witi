@@ -68,6 +68,10 @@
 #endif
 extern int (*ra_sw_nat_hook_rx) (struct sk_buff * skb);
 extern int (*ra_sw_nat_hook_tx) (struct sk_buff * skb, int gmac_no);
+#if defined (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
+extern void (*ppe_dev_register_hook) (struct net_device *dev);
+extern void (*ppe_dev_unregister_hook) (struct net_device *dev);
+#endif
 extern uint8_t		bind_dir;
 extern uint16_t		wan_vid;
 extern uint16_t		lan_vid;
@@ -105,7 +109,10 @@ struct net_device *dev;
 #endif
 //#define DSCP_REMARK_TEST
 //#define PREBIND_TEST
-
+#if defined (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
+int DP_GMAC1;
+int DPORT_GMAC2;
+#endif
 #if 0
 static struct class	*hnat_class;
 #endif
@@ -141,7 +148,8 @@ uint16_t RemoveVlanTag(struct sk_buff *skb)
 
 	//something wrong
 	if ((veth->h_vlan_proto != htons(ETH_P_8021Q)) && (veth->h_vlan_proto != 0x5678)){
-		printk("HNAT: Reentry packet is untagged frame?\n");
+		if (printk_ratelimit())
+			printk("HNAT: Reentry packet is untagged frame?\n");
 		return 65535;
 	}
 
@@ -405,7 +413,7 @@ uint32_t PpeExtIfRxHandler(struct sk_buff * skb)
 		return 1;
 	}
 
-	
+#if !defined (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)	
 	if (skb->dev == DstPort[DP_RA0]) {
 		VirIfIdx = DP_RA0;
 	}
@@ -548,21 +556,52 @@ uint32_t PpeExtIfRxHandler(struct sk_buff * skb)
 		printk("HNAT: The interface %s is unknown\n", skb->dev->name);
 	}
 
+#endif
+#if defined (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
+	int i=0;
+	int dev_match = 0;
+	for (i=0; i<MAX_IF_NUM; i++){
+		if(DstPort[i] == skb->dev){
+			VirIfIdx = i;
+			dev_match = 1;
+			//printk("%s : Interface=%s, VirIfIdx=%x\n", __func__, skb->dev, VirIfIdx);
+			break;
+		}
+	}
+	if (dev_match == 0){
+		printk("%s UnKnown Interface, VirIfIdx=%x\n", __func__, VirIfIdx);
+		return 1;
+	}
+#endif
 	//push vlan tag to stand for actual incoming interface,
 	//so HNAT module can know the actual incoming interface from vlan id.
 	LAYER3_HEADER(skb) = skb->data;
 	skb_push(skb, ETH_HLEN);	//pointer to layer2 header before calling hard_start_xmit
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
 	skb->vlan_proto= htons(ETH_P_8021Q);
+#ifdef CONFIG_RAETH_HW_VLAN_TX
+	skb->vlan_tci |= VLAN_TAG_PRESENT;
+	skb->vlan_tci |= VirIfIdx;
+#else
 	skb = __vlan_put_tag(skb, skb->vlan_proto, VirIfIdx);
+#endif
+#else
+#ifdef CONFIG_RAETH_HW_VLAN_TX
+	skb->vlan_tci |= VLAN_TAG_PRESENT;
+	skb->vlan_tci |= VirIfIdx;
 #else
 	skb = __vlan_put_tag(skb, VirIfIdx);
+#endif
 #endif
 
 	//redirect to PPE
 	FOE_AI(skb) = UN_HIT;
 	FOE_MAGIC_TAG(skb) = FOE_MAGIC_PPE;
+#if defined (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
+	skb->dev = DstPort[DP_GMAC1];	//we use GMAC1 to send the packet to PPE
+#else
 	skb->dev = DstPort[DP_GMAC];	//we use GMAC1 to send the packet to PPE
+#endif
 	dev_queue_xmit(skb);
 	return 0;
 #else
@@ -584,7 +623,8 @@ uint32_t PpeExtIfPingPongHandler(struct sk_buff * skb)
 	if (VirIfIdx < MAX_IF_NUM && DstPort[VirIfIdx]!=NULL) {
 		skb->dev = DstPort[VirIfIdx];
 	} else {
-		printk("HNAT: unknow interface (VirIfIdx=%d)\n", VirIfIdx);
+		if (printk_ratelimit())
+			printk("HNAT: unknow interface (VirIfIdx=%d)\n", VirIfIdx);
 		return 1;
 	}
 
@@ -728,6 +768,11 @@ int PpeHitBindForceToCpuHandler(struct sk_buff *skb, struct FoeEntry *foe_entry)
 	}
 #endif
 #endif
+	/* interface is unkown */
+	if(skb->dev == NULL) {
+		printk("%s, interface is unkown\n", __func__);
+		return 1;
+	}
 
 	LAYER3_HEADER(skb) = skb->data;
 	skb_push(skb, ETH_HLEN);	//pointer to layer2 header
@@ -940,7 +985,7 @@ int32_t PpeRxHandler(struct sk_buff * skb)
 	/* handle the incoming packet which came back from PPE */
 #if defined (CONFIG_HNAT_V2)
 #if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
-	} else if (((FOE_SP(skb) == 0)||(FOE_SP(skb) == 5)) && 
+	} else if ((IS_MAGIC_TAG_VALID(skb) && ((FOE_SP(skb) == 0)||(FOE_SP(skb) == 5))) && 
 			(FOE_AI(skb) != HIT_BIND_KEEPALIVE_UC_OLD_HDR) && 
 			(FOE_AI(skb) != HIT_BIND_KEEPALIVE_MC_NEW_HDR) && 
 			(FOE_AI(skb) != HIT_BIND_KEEPALIVE_DUP_OLD_HDR)) {
@@ -1633,6 +1678,10 @@ int32_t PpeFillInL3Info(struct sk_buff * skb, struct FoeEntry * foe_entry)
 			foe_entry->ipv6_6rd.ttl = PpeParseResult.iph.ttl;
 			foe_entry->ipv6_6rd.dscp = PpeParseResult.iph.tos;
 
+#if defined (CONFIG_ARCH_MT7623)
+			RegModifyBits(PPE_HASH_SEED, ntohl(PpeParseResult.iph.id), 0, 16);
+			foe_entry->ipv6_6rd.per_flow_6rd_id = 1;
+#endif
 			/* IPv4 DS-Lite and IPv6 6RD shall be turn on by SW during initialization */
 			foe_entry->bfib1.pkt_type = IPV6_6RD;
 		}
@@ -2413,9 +2462,11 @@ PpeSetForcePortInfo(struct sk_buff * skb,
 
 uint32_t PpeSetExtIfNum(struct sk_buff * skb, struct FoeEntry * foe_entry)
 {
+	
+
 #if defined  (CONFIG_RA_HW_NAT_WIFI) || defined  (CONFIG_RA_HW_NAT_NIC_USB)
     uint32_t offset = 0;
-
+#if !defined  (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
     /* This is ugly soultion to support WiFi pseudo interface.
      * Please double check the definition is the same as include/rt_linux.h 
      */
@@ -2520,9 +2571,20 @@ uint32_t PpeSetExtIfNum(struct sk_buff * skb, struct FoeEntry * foe_entry)
 #endif
 #endif
 	else {
-	    printk("HNAT: unknow interface %s\n", skb->dev->name);
+		if (printk_ratelimit())
+	 		printk("HNAT: unknow interface %s\n", skb->dev->name);
 	    return 1;
 	}
+#endif // !(CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
+#if defined  (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
+	uint32_t i = 0;
+	for (i=0; i<MAX_IF_NUM; i++){
+		if(DstPort[i] == skb->dev){
+			offset = i;
+			printk("dev match offset, name=%s ifined=%x\n", skb->dev->name,i); 
+		}
+	}
+#endif// (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
 
 	    if (IS_IPV4_HNAT(foe_entry) || IS_IPV4_HNAPT(foe_entry)) {
 		foe_entry->ipv4_hnapt.act_dp = offset;
@@ -2586,7 +2648,18 @@ void PpeSetEntryBind(struct sk_buff *skb, struct FoeEntry *foe_entry)
 #endif
 
 }
+#if defined (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
+void PpeDevRegHandler(struct net_device *dev)
+{
+	DstPort[dev->ifindex] = dev;
+	printk("***********dev->ifindex = %x\n", dev->ifindex);
+}
 
+void PpeDevUnRegHandler(struct net_device *dev)
+{
+	DstPort[dev->ifindex] = NULL;
+}
+#endif
 int32_t PpeTxHandler(struct sk_buff *skb, int gmac_no)
 {
     struct FoeEntry *foe_entry = &PpeFoeBase[FOE_ENTRY_NUM(skb)];
@@ -3147,6 +3220,10 @@ static void PpeSetFoeGloCfgEbl(uint32_t Ebl)
 	/* PPE Engine Enable */
 	RegModifyBits(PPE_GLO_CFG, 1, 0, 1);
 
+#if defined (CONFIG_ARCH_MT7623) && defined (CONFIG_RA_HW_NAT_IPV6)
+	/* TSID Enable */
+	RegModifyBits(PPE_GLO_CFG, 1, 1, 1);
+#endif
 #if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_ARCH_MT7623)
 #if defined (CONFIG_PPE_MCAST)
 	/* Enable multicast table lookup */
@@ -3164,6 +3241,9 @@ static void PpeSetFoeGloCfgEbl(uint32_t Ebl)
 	RegWrite(PPE_DFT_CPORT, 0); //default CPU port is port0 (PDMA)
 #endif // CONFIG_RAETH_QDMA //
 
+#if defined (CONFIG_ARCH_MT7623) && defined (CONFIG_RA_HW_NAT_IPV6)
+	RegModifyBits(PPE_DFT_CPORT, 1, 31, 1);
+#endif
 
 #if defined (CONFIG_RA_HW_NAT_PACKET_SAMPLING)
 	//RegWrite(PS_CFG, 1); //Enable PacketSampling
@@ -3398,6 +3478,7 @@ struct net_device *ra_dev_get_by_name(const char *name)
 static void PpeSetDstPort(uint32_t Ebl)
 {
     if (Ebl) {
+#if !defined (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
 #if defined (CONFIG_RA_HW_NAT_WIFI)
 	DstPort[DP_RA0] = ra_dev_get_by_name("ra0");
 #if defined (CONFIG_RT2860V2_AP_MBSS) || defined (CONFIG_RTPCI_AP_MBSS) || defined (CONFIG_MBSS_SUPPORT)
@@ -3481,7 +3562,33 @@ static void PpeSetDstPort(uint32_t Ebl)
 	DstPort[DP_MESHI0] = ra_dev_get_by_name("meshi0");
 #endif // CONFIG_RTDEV_AP_MESH //
 #endif // CONFIG_RA_HW_NAT_WIFI //
+#endif // !CONFIG_RA_HW_NAT_WIFI_NEW_ARCH
 
+#if defined (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
+	struct net_device *dev;
+#if defined (CONFIG_SUPPORT_OPENWRT)
+	dev=ra_dev_get_by_name("eth0");
+	printk("eth2 ifindex =%x\n", dev->ifindex);
+	DstPort[dev->ifindex] = dev;
+#ifdef CONFIG_RAETH_GMAC2
+	dev=ra_dev_get_by_name("eth1");
+	printk("eth2 ifindex =%x\n", dev->ifindex);
+	DstPort[dev->ifindex] = dev;
+#endif
+#else
+	dev=ra_dev_get_by_name("eth2");
+	printk("eth2 ifindex =%x\n", dev->ifindex);
+	DstPort[dev->ifindex] = dev;
+	DP_GMAC1 = dev->ifindex;
+#ifdef CONFIG_RAETH_GMAC2
+	dev=ra_dev_get_by_name("eth3");
+	printk("eth3 ifindex =%x\n", dev->ifindex);
+	DstPort[dev->ifindex] = dev;
+	DPORT_GMAC2 = dev->ifindex;;
+#endif
+#endif
+	
+#else
 #if defined (CONFIG_SUPPORT_OPENWRT)
 	DstPort[DP_GMAC] = ra_dev_get_by_name("eth0");
 #ifdef CONFIG_RAETH_GMAC2
@@ -3493,11 +3600,28 @@ static void PpeSetDstPort(uint32_t Ebl)
 	DstPort[DP_GMAC2] = ra_dev_get_by_name("eth3");
 #endif
 #endif
+#endif //CONFIG_RA_HW_NAT_WIFI_NEW_ARCH
+
 #if defined (CONFIG_RA_HW_NAT_NIC_USB)
 	DstPort[DP_PCI] = ra_dev_get_by_name("eth0");	// PCI interface name
 	DstPort[DP_USB] = ra_dev_get_by_name("eth1");	// USB interface name
 #endif // CONFIG_RA_HW_NAT_NIC_USB //
     } else {
+    	
+    	
+#if defined (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)   	
+
+	int j = 0;
+	for (j=0; j<MAX_IF_NUM; j++){
+		if(DstPort[j] != NULL){
+			dev_put(DstPort[j]);
+			DstPort[j] = NULL;
+		}
+	}
+#endif  	
+    
+    	
+#if !defined (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
 #if defined (CONFIG_RA_HW_NAT_WIFI)
 	if (DstPort[DP_RA0] != NULL) {
 	    dev_put(DstPort[DP_RA0]);
@@ -3688,6 +3812,7 @@ static void PpeSetDstPort(uint32_t Ebl)
 	    dev_put(DstPort[DP_USB]);
 	}
 #endif // CONFIG_RA_HW_NAT_NIC_USB //
+#endif // (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
     }
 
 }
@@ -4133,7 +4258,10 @@ static int32_t PpeInitMod(void)
     /* Register RX/TX hook point */
     ra_sw_nat_hook_tx = PpeTxHandler;
     ra_sw_nat_hook_rx = PpeRxHandler;
-
+#if defined (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)
+    ppe_dev_register_hook = PpeDevRegHandler;
+    ppe_dev_unregister_hook = PpeDevUnRegHandler;
+#endif
     /* Set GMAC fowrards packet to PPE */
 #if defined (CONFIG_RALINK_MT7620)
     if ((RegRead(0xB000000C) & 0xf) < 0x5) {
@@ -4188,7 +4316,10 @@ static void PpeCleanupMod(void)
     /* Unregister RX/TX hook point */
     ra_sw_nat_hook_rx = NULL;
     ra_sw_nat_hook_tx = NULL;
-
+#if defined (CONFIG_RA_HW_NAT_WIFI_NEW_ARCH)    
+    ppe_dev_register_hook = NULL;
+    ppe_dev_unregister_hook = NULL;
+#endif
     /* Restore PPE related register */
     PpeEngStop();
 

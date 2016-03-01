@@ -4,8 +4,8 @@
 #include <asm/rt2880/rt_mmap.h>
 
 
-#define NUM_HSDMA_RX_DESC     256
-#define NUM_HSDMA_TX_DESC     256
+#define NUM_HSDMA_RX_DESC     1024
+#define NUM_HSDMA_TX_DESC     1024
 
 #define phys_to_bus(a) (a & 0x1FFFFFFF)
 

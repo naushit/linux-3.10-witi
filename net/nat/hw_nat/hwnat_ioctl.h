@@ -14,7 +14,7 @@
 #ifndef	__HW_NAT_IOCTL_H__
 #define	__HW_NAT_IOCTL_H__
 
-#define HW_NAT_DUMP_CACHE_ENTRY    	(0x02)
+#define HW_NAT_DUMP_CACHE_ENTRY    	(0x24)
 #define HW_NAT_DUMP_ENTRY    		(0x03)
 #define HW_NAT_GET_ALL_ENTRIES 		(0x04)
 #define HW_NAT_BIND_ENTRY		(0x05)

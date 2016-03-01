@@ -55,45 +55,28 @@ rt_dma_prep_dma_memcpy(struct dma_chan *chan, dma_addr_t dest, dma_addr_t src,
 	//printk("%x->%x len=%d ch=%d\n", src, dest, len, chan->chan_id);
 	spin_lock_bh(&rt_chan->lock);
 
-	if(len < MIN_RTDMA_PKT_LEN) {
-		memcpy(phys_to_virt(dest), phys_to_virt(src), len);	
-	} else {
 #ifdef CONFIG_RT_DMA_HSDMA
   if ((dest & 0x03)!=0){
   	memcpy(phys_to_virt(dest), phys_to_virt(src), len);	
+	dma_async_tx_descriptor_init(&rt_chan->txd, chan);
   }
   else{
-	  mid_offset = len/2;
 	  hsdma_rx_dma_owner_idx0 = (hsdma_rx_calc_idx0 + 1) % NUM_HSDMA_RX_DESC;
 		HSDMA_Entry.HSDMA_tx_ring0[hsdma_tx_cpu_owner_idx0].hsdma_txd_info1.SDP0 = (src & 0xFFFFFFFF);
 	  HSDMA_Entry.HSDMA_rx_ring0[hsdma_rx_dma_owner_idx0].hsdma_rxd_info1.PDP0 = (dest & 0xFFFFFFFF);
 	  
-		HSDMA_Entry.HSDMA_tx_ring0[hsdma_tx_cpu_owner_idx0].hsdma_txd_info2.SDL0 = mid_offset;
-	  HSDMA_Entry.HSDMA_rx_ring0[hsdma_rx_dma_owner_idx0].hsdma_rxd_info2.PLEN0 = mid_offset;
+	HSDMA_Entry.HSDMA_tx_ring0[hsdma_tx_cpu_owner_idx0].hsdma_txd_info2.SDL0 = len;
+	HSDMA_Entry.HSDMA_rx_ring0[hsdma_rx_dma_owner_idx0].hsdma_rxd_info2.PLEN0 = len;
 	  
 		HSDMA_Entry.HSDMA_tx_ring0[hsdma_tx_cpu_owner_idx0].hsdma_txd_info2.LS0_bit = 1;
 	  HSDMA_Entry.HSDMA_tx_ring0[hsdma_tx_cpu_owner_idx0].hsdma_txd_info2.DDONE_bit = 0;
 	
 		hsdma_tx_cpu_owner_idx0 = (hsdma_tx_cpu_owner_idx0+1) % NUM_HSDMA_TX_DESC;
 	  hsdma_rx_calc_idx0 = (hsdma_rx_calc_idx0 + 1) % NUM_HSDMA_RX_DESC;
-		sysRegWrite(HSDMA_TX_CTX_IDX0, cpu_to_le32((u32)hsdma_tx_cpu_owner_idx0));//tx start to move, 1->2->255->0->1
+	sysRegWrite(HSDMA_TX_CTX_IDX0, cpu_to_le32((u32)hsdma_tx_cpu_owner_idx0));
 		
-	  memcpy(phys_to_virt(dest)+mid_offset, phys_to_virt(src)+mid_offset, len-mid_offset);
 	  dma_async_tx_descriptor_init(&rt_chan->txd, chan);
 	  
-	  while(HSDMA_Entry.HSDMA_rx_ring0[hsdma_rx_calc_idx0].hsdma_rxd_info2.DDONE_bit ==0);
-			
-	   i = (sysRegRead(HSDMA_RX_CALC_IDX0)+1)%NUM_HSDMA_RX_DESC;	   
-	   while (1){
-	   		if (HSDMA_Entry.HSDMA_rx_ring0[i].hsdma_rxd_info2.DDONE_bit == 1) { 
-	   			HSDMA_Entry.HSDMA_rx_ring0[i].hsdma_rxd_info2.DDONE_bit = 0; // RX_Done_bit=1->0
-	   			updateCRX=i;
-					i = (i + 1)%NUM_HSDMA_RX_DESC;
-				}	else{
-					break;
-				}
-	  } 
-	  sysRegWrite(HSDMA_RX_CALC_IDX0, cpu_to_le32((u32)updateCRX)); //update RX CPU IDX 
 	}
 #else
 		mid_offset = len/2;
@@ -108,7 +91,6 @@ rt_dma_prep_dma_memcpy(struct dma_chan *chan, dma_addr_t dest, dma_addr_t src,
 		while((RT_DMA_READ_REG(RT_DMA_DONEINT) & (0x1<<MEMCPY_DMA_CH))==0);
 		RT_DMA_WRITE_REG(RT_DMA_DONEINT, (1<<MEMCPY_DMA_CH));
 #endif
-	}
 
 	spin_unlock_bh(&rt_chan->lock);
 
@@ -195,6 +177,26 @@ static int HSDMA_init(void)
 		return 1;
 }
 #endif
+int hsdma_housekeeping(void)
+{
+	int i;
+
+	i = (sysRegRead(HSDMA_RX_CALC_IDX0)+1)%NUM_HSDMA_RX_DESC;	   
+
+	while (1) {
+		if (HSDMA_Entry.HSDMA_rx_ring0[i].hsdma_rxd_info2.DDONE_bit == 1) { 
+			HSDMA_Entry.HSDMA_rx_ring0[i].hsdma_rxd_info2.DDONE_bit = 0; // RX_Done_bit=1->0
+			updateCRX=i;
+			i = (i + 1)%NUM_HSDMA_RX_DESC;
+		}	
+		else {
+			break;
+		}
+	} 
+	sysRegWrite(HSDMA_RX_CALC_IDX0, cpu_to_le32((u32)updateCRX)); //update RX CPU IDX 
+
+	return 0;
+}
 
 /**
  * rt_dma_status - poll the status of an XOR transaction
@@ -206,7 +208,8 @@ static enum dma_status rt_dma_status(struct dma_chan *chan,
 					  dma_cookie_t cookie,
 					  struct dma_tx_state *txstate)
 {
-	printk("%s\n",__FUNCTION__);
+	//printk("%s\n",__FUNCTION__);
+	hsdma_housekeeping();
 
 	return 0;
 }

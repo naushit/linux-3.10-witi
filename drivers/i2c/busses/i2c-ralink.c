@@ -129,6 +129,14 @@ ralink_i2c_master_xfer(struct i2c_adapter *i2c_adap, struct i2c_msg *msgs,
 	ralink_i2c_wait_idle();
 	ralink_i2c_reset();
 	ralink_i2c_enable(msgs);
+#if defined (CONFIG_RALINK_MT7621) || defined (CONFIG_RALINK_MT7628)
+        im = CLKDIV_VALUE << 16;//CLKDIV_VALUE << 16; //clk div
+	im |= (I2C_CTL0_ODRAIN | I2C_CTL0_VSYNC_MODE | I2C_CTL0_SM0_WAIT_LEVEL | I2C_CTL0_SM0_EN);
+        RT2880_REG(RT2880_I2C_SM0CTL0) = im;
+
+        RT2880_REG(RT2880_I2C_SM0_IS_AUTOMODE) = 1; //auto mode
+	RT2880_REG(RT2880_I2C_ADDR_REG) = 0;
+#endif
 
 	for (im = 0; ret == 0 && im != num; im++) {
 		ret = ralink_i2c_handle_msg(i2c_adap, &msgs[im]);

@@ -11,14 +11,14 @@
 #define UBOOT_NVRAM	0
 #define RT2860_NVRAM    1
 #define RTDEV_NVRAM    	2
-#define CERT_NVRAM    	3
-#define WAPI_NVRAM    	4
+#define WIFI3_NVRAM    	3
+#define CERT_NVRAM    	4
 #else
 #define FLASH_BLOCK_NUM	4
 #define RT2860_NVRAM    0
 #define RTDEV_NVRAM    	1
-#define CERT_NVRAM    	2
-#define WAPI_NVRAM    	3
+#define WIFI3_NVRAM    	2
+#define CERT_NVRAM    	3
 #endif
 
 #define RALINK_NVRAM_DEVNAME "apsoc_nvram"
@@ -29,13 +29,17 @@
 #if defined CONFIG_EXTEND_NVRAM
 #define RALINK_NVRAM2_MTDNAME "Config2"
 #define EXTEND_BLOCK_NUM 2
-#define CONFIG2_NVRAM 		WAPI_NVRAM+1
+#define CONFIG2_NVRAM 		CERT_NVRAM+1
 #if defined CONFIG_CONFIG_SHRINK
 #define VOIP_NVRAM			RT2860_NVRAM
 #else
 #define VOIP_NVRAM			CONFIG2_NVRAM
 #endif
+#if defined CONFIG_WAPI_SUPPORT
+#define WAPI_NVRAM    	CONFIG2_NVRAM+1
+#else
 #define TR069CERT_NVRAM    	CONFIG2_NVRAM+1
+#endif
 #else
 #define EXTEND_BLOCK_NUM 0
 #define VOIP_NVRAM			RT2860_NVRAM
