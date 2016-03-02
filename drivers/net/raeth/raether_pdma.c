@@ -401,7 +401,7 @@ int fe_dma_init(struct net_device *dev)
 #else
 		ei_local->rx_ring0[i].rxd_info2.LS0 = 1;
 #endif
-		ei_local->rx_ring0[i].rxd_info1.PDP0 = dma_map_single(NULL, ei_local->netrx0_skbuf[i]->data, MAX_RX_LENGTH, PCI_DMA_FROMDEVICE);
+		ei_local->rx_ring0[i].rxd_info1.PDP0 = dma_map_single(NULL, ei_local->netrx0_skbuf[i]->data, MAX_RX_LENGTH + NET_IP_ALIGN, PCI_DMA_FROMDEVICE);
 	}
 	printk("\nphy_rx_ring0 = 0x%08x, rx_ring0 = 0x%p\n",ei_local->phy_rx_ring0,ei_local->rx_ring0);
 
@@ -427,7 +427,7 @@ int fe_dma_init(struct net_device *dev)
 #else
 		ei_local->rx_ring1[i].rxd_info2.LS0 = 1;
 #endif
-		ei_local->rx_ring1[i].rxd_info1.PDP0 = dma_map_single(NULL, ei_local->netrx1_skbuf[i]->data, MAX_RX_LENGTH, PCI_DMA_FROMDEVICE);
+		ei_local->rx_ring1[i].rxd_info1.PDP0 = dma_map_single(NULL, ei_local->netrx1_skbuf[i]->data, MAX_RX_LENGTH + NET_IP_ALIGN, PCI_DMA_FROMDEVICE);
 	}
 	printk("\nphy_rx_ring1 = 0x%08x, rx_ring1 = 0x%p\n",ei_local->phy_rx_ring1,ei_local->rx_ring1);
 #if defined(CONFIG_ARCH_MT7623)
@@ -439,7 +439,7 @@ int fe_dma_init(struct net_device *dev)
         ei_local->rx_ring2[i].rxd_info2.LS0 = 0;
         ei_local->rx_ring2[i].rxd_info2.PLEN0 = SET_ADMA_RX_LEN0(MAX_RX_LENGTH);
         ei_local->rx_ring2[i].rxd_info2.PLEN1 = SET_ADMA_RX_LEN1(MAX_RX_LENGTH >> 14);
-        ei_local->rx_ring2[i].rxd_info1.PDP0 = dma_map_single(NULL, ei_local->netrx2_skbuf[i]->data, MAX_RX_LENGTH, PCI_DMA_FROMDEVICE);
+        ei_local->rx_ring2[i].rxd_info1.PDP0 = dma_map_single(NULL, ei_local->netrx2_skbuf[i]->data, MAX_RX_LENGTH + NET_IP_ALIGN, PCI_DMA_FROMDEVICE);
     }
     printk("\nphy_rx_ring2 = 0x%08x, rx_ring2 = 0x%p\n",ei_local->phy_rx_ring2,ei_local->rx_ring2);
     /* Initial RX Ring 3*/
@@ -450,7 +450,7 @@ int fe_dma_init(struct net_device *dev)
         ei_local->rx_ring3[i].rxd_info2.LS0 = 0;
         ei_local->rx_ring3[i].rxd_info2.PLEN0 = SET_ADMA_RX_LEN0(MAX_RX_LENGTH);
         ei_local->rx_ring3[i].rxd_info2.PLEN1 = SET_ADMA_RX_LEN1(MAX_RX_LENGTH >> 14);
-		ei_local->rx_ring3[i].rxd_info1.PDP0 = dma_map_single(NULL, ei_local->netrx3_skbuf[i]->data, MAX_RX_LENGTH, PCI_DMA_FROMDEVICE);
+    	ei_local->rx_ring3[i].rxd_info1.PDP0 = dma_map_single(NULL, ei_local->netrx3_skbuf[i]->data, MAX_RX_LENGTH + NET_IP_ALIGN, PCI_DMA_FROMDEVICE);
 	}
 	printk("\nphy_rx_ring3 = 0x%08x, rx_ring3 = 0x%p\n",ei_local->phy_rx_ring3,ei_local->rx_ring3);	
 #endif  /* CONFIG_ARCH_MT7623 */
@@ -819,6 +819,7 @@ inline int rt2880_eth_send(struct net_device* dev, struct sk_buff *skb, int gmac
 	ei_local->tx_ring0[sysRegRead(TX_CTX_IDX0)].txd_info2.DDONE_bit = 0;
 #endif
 #endif // CONFIG_RAETH_TSO //
+	wmb();
 
     	tx_cpu_owner_idx0 = (tx_cpu_owner_idx0+1) % NUM_TX_DESC;
 	while(ei_local->tx_ring0[tx_cpu_owner_idx0].txd_info2.DDONE_bit == 0)
@@ -933,7 +934,7 @@ int ei_start_xmit(struct sk_buff* skb, struct net_device *dev, int gmac_no)
 	dev->trans_start = jiffies;	/* save the timestamp */
 	spin_lock_irqsave(&ei_local->page_lock, flags);
 #if defined (CONFIG_MIPS)
-	dma_cache_sync(NULL, skb->data, skb->len, DMA_TO_DEVICE);
+	dma_cache_sync(NULL, skb->data, skb_headlen(skb), DMA_TO_DEVICE);
 #else
 	dma_sync_single_for_device(NULL, virt_to_phys(skb->data), skb->len, DMA_TO_DEVICE);
 
@@ -956,7 +957,8 @@ int ei_start_xmit(struct sk_buff* skb, struct net_device *dev, int gmac_no)
 	    fe_qos_packet_send(dev, skb, ring_no, queue_no, port_no);
 	  }else{
 	    ei_local->stat.tx_dropped++;
-	    kfree_skb(skb);
+	    //QWERT kfree_skb(skb);
+		dev_kfree_skb_any(skb);
 	    spin_unlock_irqrestore(&ei_local->page_lock, flags);
 	    return 0;
 	  }
@@ -1011,7 +1013,8 @@ int ei_start_xmit(struct sk_buff* skb, struct net_device *dev, int gmac_no)
 #if defined (CONFIG_RAETH_SW_FC) 		    
 		printk("tx_ring_full, drop packet\n");
 #endif
-		kfree_skb(skb);
+		//QWERT kfree_skb(skb);
+		dev_kfree_skb_any(skb);
 		spin_unlock_irqrestore(&ei_local->page_lock, flags);
 		return 0;
 	}

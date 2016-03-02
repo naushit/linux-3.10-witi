@@ -178,6 +178,7 @@ choice
         prompt "GMAC is connected to"
         depends on RAETH
         default GE1_RGMII_FORCE_1000
+        default GE1_TRGMII_FORCE_1200 if CHIP_MT7615E
 
 config  GE1_MII_FORCE_100
         bool "MII_FORCE_100 (10/100M Switch)"
@@ -198,7 +199,7 @@ config  GE1_RGMII_FORCE_1000
 
 config  GE1_RGMII_FORCE_1000
         bool "RGMII_FORCE_1000 (GigaSW, CPU)"
-        depends on (RALINK_MT7621 || ARCH_MT7623)
+        depends on (RALINK_MT7621 || ARCH_MT7623) && (!CHIP_MT7615E)
 	select RT_3052_ESW
 
 config  GE1_TRGMII_FORCE_1200
@@ -405,3 +406,18 @@ default y if GE1_RGMII_AN || GE2_RGMII_AN
 config 100PHY
 bool
 default y if GE1_MII_AN || GE2_MII_AN
+#SKB alloc selection
+config ETH_SKB_ALLOC_SELECT
+        bool "SKB Allocation API Select"
+        default n
+choice
+	prompt "SKB Allocation API Selection"
+        depends on ETH_SKB_ALLOC_SELECT
+	default ETH_PAGE_ALLOC_SKB
+
+	config  ETH_SLAB_ALLOC_SKB
+		bool "SLAB skb allocation"
+
+	config  ETH_PAGE_ALLOC_SKB
+		bool "Page skb allocation"
+endchoice

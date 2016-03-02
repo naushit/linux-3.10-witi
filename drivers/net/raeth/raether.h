@@ -30,13 +30,33 @@
 #define NUM_TX_DESC    	256
 #elif defined (CONFIG_RT_3052_ESW)
 #if defined (CONFIG_RALINK_MT7621)
-#define NUM_RX_DESC     512
+#define NUM_RX_DESC 1024
 #define NUM_QRX_DESC     16
-#define NUM_TX_DESC     512 
+#ifdef CONFIG_RAETH_QDMA
+#define NUM_PQ 16
+#define NUM_PQ_RESV 4
+#define FFA 1024
+#define QUEUE_OFFSET 0x10
+#define NUM_TX_DESC (NUM_PQ * NUM_PQ_RESV + FFA)
+#else
+#define NUM_TX_DESC 1024
+#endif
 #elif defined (CONFIG_ARCH_MT7623)
 #define NUM_RX_DESC     2048
+#ifdef CONFIG_RAETH_QDMA
+#if defined (CONFIG_RAETH_QDMATX_QDMARX) || defined (CONFIG_RAETH_PDMATX_QDMARX)
+#define NUM_QRX_DESC NUM_RX_DESC
+#else
 #define NUM_QRX_DESC     16
+#endif
+#define NUM_PQ 16
+#define NUM_PQ_RESV 4
+#define FFA 2048
+#define QUEUE_OFFSET 0x10
+#define NUM_TX_DESC (NUM_PQ * NUM_PQ_RESV + FFA)
+#else
 #define NUM_TX_DESC     2048
+#endif
 #else
 #define NUM_RX_DESC     512
 #define NUM_QRX_DESC NUM_RX_DESC

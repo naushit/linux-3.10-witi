@@ -210,9 +210,12 @@ void enable_auto_negotiate(int unused)
 #if defined (CONFIG_GE_RGMII_INTERNAL_P0_AN)|| defined (CONFIG_GE_RGMII_INTERNAL_P4_AN) || defined (CONFIG_GE2_RGMII_AN)
 	regValue |= ((CONFIG_MAC_TO_GIGAPHY_MODE_ADDR2-1)&0x1f << 0);//setup PHY address for auto polling (Start Addr).
 	regValue |= (CONFIG_MAC_TO_GIGAPHY_MODE_ADDR2 << 8);// setup PHY address for auto polling (End Addr).
-#else
+#elif defined (CONFIG_GE1_RGMII_AN)
 	regValue |= (CONFIG_MAC_TO_GIGAPHY_MODE_ADDR << 0);//setup PHY address for auto polling (Start Addr).
 	regValue |= (CONFIG_MAC_TO_GIGAPHY_MODE_ADDR2 << 8);// setup PHY address for auto polling (End Addr).
+#else
+
+	;
 #endif
 #else
 	regValue |= (addr << 0);// setup PHY address for auto polling (start Addr).
