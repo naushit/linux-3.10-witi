@@ -14822,8 +14822,10 @@ INT set_agc_vga_clamp_proc(RTMP_ADAPTER *pAd, PSTRING arg)
 {
 	INT32 val = simple_strtol(arg, 0, 10);
 
+#if 0
 	if (pAd->CommonCfg.Channel > 14)
 		return FALSE;
+#endif
 
 #ifdef MT76x2
 	if (IS_MT76x2(pAd)) {
